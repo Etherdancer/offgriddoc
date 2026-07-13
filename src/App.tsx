@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Upload, Download, ShieldAlert, Droplet, Search } from 'lucide-react';
 import { DocumentViewer } from './components/DocumentViewer';
 import './index.css';
@@ -9,6 +9,25 @@ function App() {
   const [brushSize, setBrushSize] = useState(20);
   const [tool, setTool] = useState<'brush' | 'auto'>('brush');
   const [exportTrigger, setExportTrigger] = useState(0);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(() => {
+        setDeferredPrompt(null);
+      });
+    }
+  };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -50,6 +69,15 @@ function App() {
           </div>
         </div>
         <div className="status-badge">
+          {deferredPrompt && (
+            <button 
+              onClick={handleInstallClick} 
+              className="btn" 
+              style={{ padding: '0.25rem 0.75rem', fontSize: '0.875rem', gap: '0.25rem' }}
+            >
+              <Download size={14} /> Install App
+            </button>
+          )}
           <div className="status-dot"></div>
           Offline Ready
         </div>

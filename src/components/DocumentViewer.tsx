@@ -3,11 +3,10 @@ import * as pdfjsLib from 'pdfjs-dist';
 import piexif from 'piexifjs';
 import Tesseract from 'tesseract.js';
 
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
 // Initialize PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.mjs',
-  import.meta.url
-).toString();
+pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
 interface DocumentViewerProps {
   file: File;
@@ -51,7 +50,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       try {
         if (file.type === 'application/pdf') {
           const arrayBuffer = await file.arrayBuffer();
-          const pdf = await pdfjsLib.getDocument(arrayBuffer as any).promise;
+          const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
           const page = await pdf.getPage(1); // Load first page for now
           
           const viewport = page.getViewport({ scale: 1.5 });
