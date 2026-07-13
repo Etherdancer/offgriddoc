@@ -210,7 +210,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     if (exportTrigger.trigger > 0 && canvasRef.current) {
       const format = exportTrigger.format;
       const canvas = canvasRef.current;
-      const filename = `redacted_${file.name.split('.')[0]}`;
+      const filename = `redacted_${file?.name?.split('.')[0] || 'document'}`;
 
       if (format === 'pdf') {
         const imgData = canvas.toDataURL('image/jpeg', 1.0);
