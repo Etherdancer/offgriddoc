@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Download, ShieldAlert, Droplet, Search, Minus, Square, Undo, Redo } from 'lucide-react';
+import { Upload, Download, ShieldAlert, Droplet, Wand2, Minus, Square, Undo, Redo } from 'lucide-react';
 import { DocumentViewer, type DocumentViewerRef } from './components/DocumentViewer';
 import './index.css';
 
@@ -195,7 +195,7 @@ function App() {
                     disabled={isProcessing}
                     title="Auto Redact Sensitive Info"
                   >
-                    <Search size={20} />
+                    <Wand2 size={20} />
                   </button>
                 </div>
                 <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 8px' }}></div>
