@@ -707,6 +707,60 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         });
       }
 
+      // Strategy C: TSV parsing — works even when words[] and lines[] are empty
+      // Tesseract TSV columns: level, page, block, par, line, word, left, top, width, height, conf, text
+      if (redactedCount === 0) {
+        const tsv: string = result?.data?.tsv || '';
+        const tsvRows = tsv.trim().split('\n').slice(1); // skip header
+
+        // Parse all word-level rows (level=5) from TSV
+        const tsvWords: Array<{ text: string; left: number; top: number; width: number; height: number }> = [];
+        for (const row of tsvRows) {
+          const cols = row.split('\t');
+          if (cols.length < 12) continue;
+          const level = parseInt(cols[0]);
+          const text = cols[11]?.trim();
+          if (level !== 5 || !text) continue;
+          tsvWords.push({
+            text,
+            left: parseInt(cols[6]),
+            top: parseInt(cols[7]),
+            width: parseInt(cols[8]),
+            height: parseInt(cols[9]),
+          });
+        }
+
+        if (tsvWords.length > 0) {
+          // Sliding window across all TSV words
+          let tsvText = '';
+          const charToTsvWord: number[] = [];
+          tsvWords.forEach((w, i) => {
+            const start = tsvText.length;
+            tsvText += w.text + ' ';
+            for (let c = start; c < tsvText.length; c++) charToTsvWord[c] = i;
+          });
+
+          const tsvToRedact = new Set<number>();
+          patterns.forEach(pattern => {
+            const p = new RegExp(pattern.source, pattern.flags);
+            let match;
+            while ((match = p.exec(tsvText)) !== null) {
+              const si = charToTsvWord[match.index];
+              const ei = charToTsvWord[match.index + match[0].length - 1];
+              if (si !== undefined && ei !== undefined)
+                for (let i = si; i <= ei; i++) tsvToRedact.add(i);
+            }
+          });
+
+          tsvToRedact.forEach(idx => {
+            const w = tsvWords[idx];
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(w.left * scaleX, w.top * scaleY, w.width * scaleX, w.height * scaleY);
+            redactedCount++;
+          });
+        }
+      }
+
       if (redactedCount > 0) {
         saveHistoryState(true);
       } else {
