@@ -52,6 +52,33 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const [pendingShape, setPendingShape] = useState<PendingShape | null>(null);
   const [resizingHandle, setResizingHandle] = useState<string | null>(null);
 
+  // History state for Undo/Redo
+  const historyRef = useRef<ImageData[]>([]);
+  const historyStepRef = useRef<number>(-1);
+
+  const saveHistoryState = () => {
+    if (!ctxRef.current || !canvasRef.current) return;
+    const imageData = ctxRef.current.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height);
+    historyRef.current = historyRef.current.slice(0, historyStepRef.current + 1);
+    historyRef.current.push(imageData);
+    if (historyRef.current.length > 15) historyRef.current.shift();
+    historyStepRef.current = historyRef.current.length - 1;
+  };
+
+  const undo = () => {
+    if (historyStepRef.current > 0 && ctxRef.current) {
+      historyStepRef.current -= 1;
+      ctxRef.current.putImageData(historyRef.current[historyStepRef.current], 0, 0);
+    }
+  };
+
+  const redo = () => {
+    if (historyStepRef.current < historyRef.current.length - 1 && ctxRef.current) {
+      historyStepRef.current += 1;
+      ctxRef.current.putImageData(historyRef.current[historyStepRef.current], 0, 0);
+    }
+  };
+
   useEffect(() => {
     if (!file || !canvasRef.current || !overlayCanvasRef.current) return;
 
@@ -117,6 +144,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           overlayCanvas.height = img.height;
           ctx.drawImage(img, 0, 0);
         }
+        
+        // Save initial state to history
+        setTimeout(saveHistoryState, 100);
       } catch (err) {
         console.error("Error loading document:", err);
       } finally {
@@ -203,6 +233,84 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     }
   }, [pendingShape, brushSize]);
 
+  // Draw overlay shape
+  useEffect(() => {
+    const oCtx = overlayCtxRef.current;
+    const overlayCanvas = overlayCanvasRef.current;
+    if (!oCtx || !overlayCanvas) return;
+    
+    oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    
+    if (!pendingShape) return;
+    
+    oCtx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Semi-transparent black for preview
+    const HANDLE_SIZE = 16;
+    
+    if (pendingShape.type === 'area') {
+      const x = Math.min(pendingShape.startX, pendingShape.endX);
+      const y = Math.min(pendingShape.startY, pendingShape.endY);
+      const w = Math.abs(pendingShape.endX - pendingShape.startX);
+      const h = Math.abs(pendingShape.endY - pendingShape.startY);
+      oCtx.fillRect(x, y, w, h);
+      
+      if (pendingShape.status === 'pending') {
+        oCtx.fillStyle = '#10B981'; // Green handles
+        const hs = HANDLE_SIZE;
+        const hhs = hs / 2;
+        oCtx.fillRect(pendingShape.startX - hhs, pendingShape.startY - hhs, hs, hs);
+        oCtx.fillRect(pendingShape.endX - hhs, pendingShape.startY - hhs, hs, hs);
+        oCtx.fillRect(pendingShape.startX - hhs, pendingShape.endY - hhs, hs, hs);
+        oCtx.fillRect(pendingShape.endX - hhs, pendingShape.endY - hhs, hs, hs);
+      }
+    } else if (pendingShape.type === 'line') {
+      const y = pendingShape.startY;
+      const x = Math.min(pendingShape.startX, pendingShape.endX);
+      const w = Math.abs(pendingShape.endX - pendingShape.startX);
+      const h = brushSize;
+      
+      oCtx.fillRect(x, y - h / 2, w, h);
+      
+      if (pendingShape.status === 'pending') {
+        oCtx.fillStyle = '#10B981';
+        const hs = HANDLE_SIZE;
+        const hhs = hs / 2;
+        oCtx.fillRect(pendingShape.startX - hhs, y - hhs, hs, hs);
+        oCtx.fillRect(pendingShape.endX - hhs, y - hhs, hs, hs);
+      }
+    }
+  }, [pendingShape, brushSize]);
+
+  const getFloatingToolbarStyle = (): React.CSSProperties => {
+    if (!pendingShape || !overlayCanvasRef.current || !containerRef.current) return { display: 'none' };
+    const rect = overlayCanvasRef.current.getBoundingClientRect();
+    const parentRect = containerRef.current.getBoundingClientRect();
+    
+    const scaleX = rect.width / overlayCanvasRef.current.width;
+    const scaleY = rect.height / overlayCanvasRef.current.height;
+    
+    let maxX = Math.max(pendingShape.startX, pendingShape.endX);
+    let maxY = Math.max(pendingShape.startY, pendingShape.endY);
+    if (pendingShape.type === 'line') maxY = pendingShape.startY + brushSize / 2;
+    
+    const cssX = (rect.left - parentRect.left) + maxX * scaleX;
+    const cssY = (rect.top - parentRect.top) + maxY * scaleY;
+    
+    return {
+      position: 'absolute',
+      left: `${cssX}px`,
+      top: `${cssY + 16}px`,
+      transform: 'translateX(-100%)',
+      display: 'flex', 
+      gap: '0.5rem', 
+      zIndex: 10, 
+      background: 'var(--surface-color)', 
+      padding: '0.5rem', 
+      borderRadius: 'var(--radius-lg)', 
+      border: '1px solid var(--border-color)',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+    };
+  };
+
   // Event Handlers
   const getMousePos = (e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent) => {
     const canvas = overlayCanvasRef.current;
@@ -231,6 +339,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     if (!pendingShape || pendingShape.status !== 'pending') return null;
     const hitArea = 20;
     
+    let minX = Math.min(pendingShape.startX, pendingShape.endX);
+    let maxX = Math.max(pendingShape.startX, pendingShape.endX);
+    
     if (pendingShape.type === 'area') {
       const handles = {
         'nw': { x: pendingShape.startX, y: pendingShape.startY },
@@ -241,6 +352,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       for (const [key, h] of Object.entries(handles)) {
         if (Math.abs(pos.x - h.x) <= hitArea && Math.abs(pos.y - h.y) <= hitArea) return key;
       }
+      
+      // Check for move (inside area)
+      const minY = Math.min(pendingShape.startY, pendingShape.endY);
+      const maxY = Math.max(pendingShape.startY, pendingShape.endY);
+      if (pos.x >= minX && pos.x <= maxX && pos.y >= minY && pos.y <= maxY) return 'move';
+      
     } else if (pendingShape.type === 'line') {
       const handles = {
         'start': { x: pendingShape.startX, y: pendingShape.startY },
@@ -249,6 +366,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       for (const [key, h] of Object.entries(handles)) {
         if (Math.abs(pos.x - h.x) <= hitArea && Math.abs(pos.y - h.y) <= hitArea) return key;
       }
+      
+      // Check for move (inside line)
+      const y = pendingShape.startY;
+      if (pos.x >= minX && pos.x <= maxX && pos.y >= y - brushSize && pos.y <= y + brushSize) return 'move';
     }
     return null;
   };
@@ -261,6 +382,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       const handle = getHandleAtPos(pos);
       if (handle) {
         setResizingHandle(handle);
+        lastPoint.current = pos;
         return;
       }
       // If clicked outside, let it stay pending
@@ -291,10 +413,19 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     const pos = getMousePos(e);
 
     if (resizingHandle && pendingShape) {
+      const dx = pos.x - lastPoint.current!.x;
+      const dy = pos.y - lastPoint.current!.y;
+
       setPendingShape(prev => {
         if (!prev) return prev;
         const next = { ...prev };
-        if (prev.type === 'area') {
+        
+        if (resizingHandle === 'move') {
+          next.startX += dx;
+          next.endX += dx;
+          next.startY += dy;
+          next.endY += dy;
+        } else if (prev.type === 'area') {
           if (resizingHandle.includes('n')) next.startY = pos.y;
           if (resizingHandle.includes('s')) next.endY = pos.y;
           if (resizingHandle.includes('w')) next.startX = pos.x;
@@ -302,15 +433,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         } else if (prev.type === 'line') {
           if (resizingHandle === 'start') {
              next.startX = pos.x;
-             next.startY = pos.y; // allow moving the whole line vertically from handles
+             next.startY = pos.y; 
           }
           if (resizingHandle === 'end') {
              next.endX = pos.x;
-             next.startY = pos.y; // keep it horizontal, update Y if dragged
+             next.startY = pos.y; 
           }
         }
         return next;
       });
+      lastPoint.current = pos;
       return;
     }
 
@@ -336,6 +468,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   };
 
   const stopDrawing = () => {
+    if (isDrawing.current && tool === 'brush') {
+      saveHistoryState();
+    }
     isDrawing.current = false;
     lastPoint.current = null;
     setResizingHandle(null);
@@ -360,6 +495,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       ctx.fillRect(x, pendingShape.startY - brushSize / 2, w, brushSize);
     }
     setPendingShape(null);
+    saveHistoryState();
   };
 
   const cancelShape = () => setPendingShape(null);
@@ -368,6 +504,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') cancelShape();
       if (e.key === 'Enter') confirmShape();
+      if (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      }
+      if (e.key.toLowerCase() === 'y' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        redo();
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
@@ -395,6 +540,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           ctx.fillRect(word.bbox.x0, word.bbox.y0, word.bbox.x1 - word.bbox.x0, word.bbox.y1 - word.bbox.y0);
         }
       });
+      saveHistoryState();
     } catch (e) {
       console.error(e);
     } finally {
@@ -452,28 +598,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       />
       
       {pendingShape?.status === 'pending' && (
-        <div 
-          className="floating-toolbar"
-          style={{ 
-            position: 'absolute', 
-            bottom: '2rem',
-            display: 'flex', 
-            gap: '0.5rem', 
-            zIndex: 10, 
-            background: 'var(--surface-color)', 
-            padding: '0.5rem', 
-            borderRadius: 'var(--radius-lg)', 
-            border: '1px solid var(--border-color)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
-          }}
-        >
+        <div style={getFloatingToolbarStyle()}>
           <button 
             onClick={confirmShape} 
             className="btn" 
             style={{ padding: '0.5rem 1rem', background: 'var(--primary-color)' }} 
             title="Confirm (Enter)"
           >
-            <Check size={20} /> Confirm
+            <Check size={20} />
           </button>
           <button 
             onClick={cancelShape} 
@@ -481,7 +613,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             style={{ padding: '0.5rem 1rem' }} 
             title="Cancel (Esc)"
           >
-            <X size={20} /> Cancel
+            <X size={20} />
           </button>
         </div>
       )}
