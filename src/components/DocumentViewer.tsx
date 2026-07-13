@@ -152,6 +152,10 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           overlayCanvas.height = viewport.height;
           overlayCanvas.width = viewport.width;
           
+          // Fill with white background (crucial for OCR and PDF rendering)
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
           const renderContext = {
             canvasContext: ctx,
             viewport: viewport
@@ -190,6 +194,10 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           canvas.height = img.height;
           overlayCanvas.width = img.width;
           overlayCanvas.height = img.height;
+          
+          // Fill with white background to prevent transparent-PNG OCR failures
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, 0, 0);
         }
         
