@@ -610,20 +610,17 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       });
 
       const patterns = [
-        // US SSN
-        /\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/g, 
-        // International Phone / Dates (highly permissive for 8-15 digits with spaces/dashes)
-        /(?:\+?\d{1,4}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\b(?:\d{2,4}[\s.-]?){2,4}\d{2,4}\b/g,
-        // Email
-        /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/gi, 
-        // Credit Card
-        /\b(?:\d{4}[- ]?){3}\d{4}\b/g,
-        // Generic National ID (like 11-digit PESEL, or 9-digit IDs)
-        /\b\d{9,11}\b/g,
-        // Passport / ID Card (e.g. ABC 123456)
-        /\b[A-Za-z]{2,3}[\s.-]?\d{6,7}\b/gi,
-        // IBAN (European Bank Accounts)
-        /\b[A-Za-z]{2}\d{2}(?:[\s.-]?\d{4}){3,5}[\s.-]?\d{1,4}\b/gi
+        // 1. Any long sequence of numbers (8 to 16 digits), allowing spaces, dashes, dots, commas (Phone, OIB, SSN, Credit Card)
+        /(?:\b|\+)(?:\d[\s.,-]*){8,16}\b/g,
+        
+        // 2. Alphanumeric IDs (e.g. Passports, IBAN, ID cards) - 2 to 4 letters followed by 6 to 15 digits
+        /\b[A-Za-z]{2,4}[\s.,-]*(?:\d[\s.,-]*){6,15}\b/g,
+        
+        // 3. Emails, allowing spaces around @ and . due to OCR artifacts
+        /\b[A-Za-z0-9._%+-]+[\s]*@[\s]*[A-Za-z0-9.-]+[\s]*\.[\s]*[A-Za-z]{2,}\b/gi,
+        
+        // 4. Fallback for strict dates (DOB) just in case they want those redacted too
+        /\b(?:\d{1,2}[\s.,-/]+){2}\d{2,4}\b/g
       ];
       
       let redactedCount = 0;
