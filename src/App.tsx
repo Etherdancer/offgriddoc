@@ -8,8 +8,21 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [brushSize, setBrushSize] = useState(20);
   const [tool, setTool] = useState<'brush' | 'auto'>('brush');
-  const [exportTrigger, setExportTrigger] = useState(0);
+  const [exportTrigger, setExportTrigger] = useState({ trigger: 0, format: 'pdf' });
+  const [exportFormat, setExportFormat] = useState<'pdf' | 'png' | 'jpeg'>('pdf');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    if (file) {
+      if (file.type === 'application/pdf') {
+        setExportFormat('pdf');
+      } else if (file.type === 'image/jpeg') {
+        setExportFormat('jpeg');
+      } else {
+        setExportFormat('png');
+      }
+    }
+  }, [file]);
 
   useEffect(() => {
     const handler = (e: any) => {
@@ -47,7 +60,7 @@ function App() {
   };
 
   const triggerExport = () => {
-    setExportTrigger(prev => prev + 1);
+    setExportTrigger(prev => ({ trigger: prev.trigger + 1, format: exportFormat }));
   };
 
   const handleAutoRedact = () => {
@@ -134,13 +147,24 @@ function App() {
                 />
               </div>
               <div className="tools-group">
+                <select 
+                  value={exportFormat} 
+                  onChange={(e) => setExportFormat(e.target.value as any)}
+                  className="tool-btn"
+                  style={{ padding: '0.75rem', borderRadius: 'var(--radius-md)', outline: 'none' }}
+                  title="Export Format"
+                >
+                  <option value="pdf">PDF</option>
+                  <option value="png">PNG</option>
+                  <option value="jpeg">JPEG</option>
+                </select>
                 <button 
                   className="btn" 
                   onClick={triggerExport} 
                   disabled={isProcessing}
                   title="Export securely"
                 >
-                  <Download size={18} /> Export Flattened
+                  <Download size={18} /> Export
                 </button>
                 <button className="btn btn-secondary" onClick={() => setFile(null)}>
                   Cancel

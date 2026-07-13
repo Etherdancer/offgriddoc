@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import piexif from 'piexifjs';
 import Tesseract from 'tesseract.js';
-
+import { jsPDF } from 'jspdf';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 // Initialize PDF.js worker
@@ -13,7 +13,7 @@ interface DocumentViewerProps {
   brushSize: number;
   tool: 'brush' | 'auto';
   onProcessing: (isProcessing: boolean) => void;
-  exportTrigger: number;
+  exportTrigger: { trigger: number, format: string };
 }
 
 interface Point {
@@ -107,14 +107,30 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
   // Handle Export
   useEffect(() => {
-    if (exportTrigger > 0 && canvasRef.current) {
-      const dataUrl = canvasRef.current.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = dataUrl;
-      a.download = `redacted_${file.name.split('.')[0]}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+    if (exportTrigger.trigger > 0 && canvasRef.current) {
+      const format = exportTrigger.format;
+      const canvas = canvasRef.current;
+      const filename = `redacted_${file.name.split('.')[0]}`;
+
+      if (format === 'pdf') {
+        const imgData = canvas.toDataURL('image/jpeg', 1.0);
+        const pdf = new jsPDF({
+          orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
+          unit: 'px',
+          format: [canvas.width, canvas.height]
+        });
+        pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
+        pdf.save(`${filename}.pdf`);
+      } else {
+        const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+        const dataUrl = canvas.toDataURL(mimeType, 1.0);
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = `${filename}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
     }
   }, [exportTrigger]);
 
