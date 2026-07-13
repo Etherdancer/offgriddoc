@@ -608,6 +608,14 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         /\b\d{1,2}[.\/\-]\d{1,2}[.\/\-]\d{2,4}\b/g, // Dates DD/MM/YYYY etc.
         /\b\d{5,}\b/g,                              // Postal codes / long numeric IDs
         /\b[A-Za-z]{1,3}\s*\d{6,}\b/gi,            // Alphanumeric IDs (passport, licence)
+
+        // CV field labels followed by their values — works across all Europass languages
+        // Place of birth
+        /(?:Mjesto\s+ro[đd]enja|Place\s+of\s+birth|Lieu\s+de\s+naissance|Geburtsort|Luogo\s+di\s+nascita|Lugar\s+de\s+nacimiento)[:\s]+[\wÀ-žÀ-ÖØ-öø-ÿ][^:\n]{1,60}/gi,
+        // Nationality / Citizenship
+        /(?:Dr[žz]avljanstvo|Nationality|Nationalité|Staatsangehörigkeit|Nazionalità|Nacionalidad)[:\s]+[\wÀ-žÀ-ÖØ-öø-ÿ][^:\n]{1,40}/gi,
+        // Street address / home address
+        /(?:K[uú][ćc]na\s+adresa|Home\s+address|Adresse|Wohnadresse|Indirizzo|Dirección)[:\s]+[\wÀ-žÀ-ÖØ-öø-ÿ][^:\n]{1,80}/gi,
       ];
 
       const matchPatterns = (text: string): boolean =>
