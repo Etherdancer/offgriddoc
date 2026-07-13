@@ -613,6 +613,98 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       const matchPatterns = (text: string): boolean =>
         patterns.some(p => { p.lastIndex = 0; return p.test(text); });
 
+      // Helper to robustly extract bounding boxes from Tesseract result (fixes Croatian language bug)
+      const processTesseractResult = (result: any, sX: number, sY: number) => {
+        let count = 0;
+        const words = result?.data?.words || [];
+        const lines = result?.data?.lines || [];
+        const tsv = result?.data?.tsv || '';
+
+        // 1. Strategy A: Word-level boxes (most precise)
+        if (words.length > 0) {
+          let text = '';
+          const charToWord: number[] = [];
+          words.forEach((w: any, i: number) => {
+            const start = text.length;
+            text += w.text + ' ';
+            for (let c = start; c < text.length; c++) charToWord[c] = i;
+          });
+          const wordsToRedact = new Set<number>();
+          patterns.forEach(pattern => {
+            const p = new RegExp(pattern.source, pattern.flags);
+            let match;
+            while ((match = p.exec(text)) !== null) {
+              const si = charToWord[match.index];
+              const ei = charToWord[match.index + match[0].length - 1];
+              if (si !== undefined && ei !== undefined)
+                for (let i = si; i <= ei; i++) wordsToRedact.add(i);
+            }
+          });
+          wordsToRedact.forEach(idx => {
+            const w = words[idx];
+            if (w?.bbox) {
+              ctx.fillStyle = '#000000';
+              ctx.fillRect(w.bbox.x0 * sX, w.bbox.y0 * sY, (w.bbox.x1 - w.bbox.x0) * sX, (w.bbox.y1 - w.bbox.y0) * sY);
+              count++;
+            }
+          });
+        }
+
+        // 2. Strategy B: Line-level boxes
+        if (count === 0 && lines.length > 0) {
+          lines.forEach((line: any) => {
+            if (line?.text && line?.bbox && matchPatterns(line.text)) {
+              ctx.fillStyle = '#000000';
+              ctx.fillRect(line.bbox.x0 * sX, line.bbox.y0 * sY, (line.bbox.x1 - line.bbox.x0) * sX, (line.bbox.y1 - line.bbox.y0) * sY);
+              count++;
+            }
+          });
+        }
+
+        // 3. Strategy C: TSV Parsing (Fixes Tesseract WASM bug for `hrv` where words/lines are empty)
+        if (count === 0 && tsv) {
+          const rows = tsv.trim().split('\n').slice(1);
+          const tsvWords: any[] = [];
+          for (const row of rows) {
+            const cols = row.split('\t');
+            if (cols.length >= 12 && parseInt(cols[0]) === 5 && cols[11]?.trim()) {
+              tsvWords.push({
+                text: cols[11].trim(),
+                left: parseInt(cols[6]), top: parseInt(cols[7]),
+                width: parseInt(cols[8]), height: parseInt(cols[9])
+              });
+            }
+          }
+          if (tsvWords.length > 0) {
+            let tsvText = '';
+            const charToTsvWord: number[] = [];
+            tsvWords.forEach((w, i) => {
+              const start = tsvText.length;
+              tsvText += w.text + ' ';
+              for (let c = start; c < tsvText.length; c++) charToTsvWord[c] = i;
+            });
+            const tsvToRedact = new Set<number>();
+            patterns.forEach(pattern => {
+              const p = new RegExp(pattern.source, pattern.flags);
+              let match;
+              while ((match = p.exec(tsvText)) !== null) {
+                const si = charToTsvWord[match.index];
+                const ei = charToTsvWord[match.index + match[0].length - 1];
+                if (si !== undefined && ei !== undefined)
+                  for (let i = si; i <= ei; i++) tsvToRedact.add(i);
+              }
+            });
+            tsvToRedact.forEach(idx => {
+              const w = tsvWords[idx];
+              ctx.fillStyle = '#000000';
+              ctx.fillRect(w.left * sX, w.top * sY, w.width * sX, w.height * sY);
+              count++;
+            });
+          }
+        }
+        return count;
+      };
+
       if (file.type === 'application/pdf') {
         // ── Strategy 1: PDF.js text extraction ──────────────────────────────
         // Text-based PDFs (Word, Europass, etc.) have embedded text — no OCR needed.
@@ -660,10 +752,13 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
 
           // 1. Find the boundary of the personal section
           let personalSectionEnd = items.length;
+          let labelSeen = false;
           for (let si = 3; si < items.length; si++) {
             const t = items[si].str.trim();
-            // Section header: all uppercase, 4+ chars, no digits
+            if (/:\s*$/.test(t)) labelSeen = true;
+            // Section header: all uppercase, 4+ chars, no digits (only break AFTER seeing at least one label)
             if (
+              labelSeen &&
               t.length >= 4 &&
               t === t.toUpperCase() &&
               /[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ]/.test(t) &&
@@ -673,6 +768,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
               break;
             }
           }
+
 
           // 2. Redact value items that follow labels inside the personal section
           let pi = 0;
@@ -726,13 +822,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           const result: any = await Tesseract.recognize(dataUrl, ocrLanguage, { logger: m => console.log(m) });
           const sX = canvasRef.current.width / ocrCanvas.width;
           const sY = canvasRef.current.height / ocrCanvas.height;
-          (result?.data?.words || []).forEach((w: any) => {
-            if (w?.bbox && matchPatterns(w.text)) {
-              ctx.fillStyle = '#000000';
-              ctx.fillRect(w.bbox.x0 * sX, w.bbox.y0 * sY, (w.bbox.x1 - w.bbox.x0) * sX, (w.bbox.y1 - w.bbox.y0) * sY);
-              redactedCount++;
-            }
-          });
+          redactedCount += processTesseractResult(result, sX, sY);
         }
 
       } else {
@@ -746,13 +836,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         const result: any = await Tesseract.recognize(dataUrl, ocrLanguage, { logger: m => console.log(m) });
         const sX = canvasRef.current.width / (result?.data?.imageWidth || canvasRef.current.width);
         const sY = canvasRef.current.height / (result?.data?.imageHeight || canvasRef.current.height);
-        (result?.data?.words || []).forEach((w: any) => {
-          if (w?.bbox && matchPatterns(w.text)) {
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(w.bbox.x0 * sX, w.bbox.y0 * sY, (w.bbox.x1 - w.bbox.x0) * sX, (w.bbox.y1 - w.bbox.y0) * sY);
-            redactedCount++;
-          }
-        });
+        redactedCount += processTesseractResult(result, sX, sY);
       }
 
       if (redactedCount > 0) {
