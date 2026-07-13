@@ -58,29 +58,65 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
   const [resizingHandle, setResizingHandle] = useState<string | null>(null);
 
   // History state for Undo/Redo
-  const historyRef = useRef<ImageData[]>([]);
+  interface HistoryState {
+    imageData: ImageData;
+    pendingShape: PendingShape | null;
+  }
+  const historyRef = useRef<HistoryState[]>([]);
   const historyStepRef = useRef<number>(-1);
 
-  const saveHistoryState = () => {
+  // We use a ref for pending shape to read it synchronously in event handlers
+  const pendingShapeRef = useRef<PendingShape | null>(null);
+
+  const updatePendingShape = (updater: PendingShape | null | ((prev: PendingShape | null) => PendingShape | null)) => {
+    setPendingShape(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      pendingShapeRef.current = next;
+      return next;
+    });
+  };
+
+  const saveHistoryState = (updateCanvas: boolean = true) => {
     if (!ctxRef.current || !canvasRef.current) return;
-    const imageData = ctxRef.current.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height);
+    
+    let newImageData;
+    if (updateCanvas || historyRef.current.length === 0) {
+      newImageData = ctxRef.current.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height);
+    } else {
+      newImageData = historyRef.current[historyStepRef.current].imageData;
+    }
+
     historyRef.current = historyRef.current.slice(0, historyStepRef.current + 1);
-    historyRef.current.push(imageData);
-    if (historyRef.current.length > 15) historyRef.current.shift();
+    
+    const lastState = historyRef.current[historyRef.current.length - 1];
+    if (lastState && !updateCanvas && !lastState.pendingShape && !pendingShapeRef.current) {
+      return; // Skip identical empty states
+    }
+
+    historyRef.current.push({
+      imageData: newImageData,
+      pendingShape: pendingShapeRef.current ? { ...pendingShapeRef.current } : null
+    });
+    
+    if (historyRef.current.length > 30) historyRef.current.shift();
     historyStepRef.current = historyRef.current.length - 1;
   };
 
   const undo = () => {
     if (historyStepRef.current > 0 && ctxRef.current) {
       historyStepRef.current -= 1;
-      ctxRef.current.putImageData(historyRef.current[historyStepRef.current], 0, 0);
+      const state = historyRef.current[historyStepRef.current];
+      ctxRef.current.putImageData(state.imageData, 0, 0);
+      updatePendingShape(state.pendingShape);
     }
   };
 
   const redo = () => {
     if (historyStepRef.current < historyRef.current.length - 1 && ctxRef.current) {
       historyStepRef.current += 1;
-      ctxRef.current.putImageData(historyRef.current[historyStepRef.current], 0, 0);
+      const state = historyRef.current[historyStepRef.current];
+      ctxRef.current.putImageData(state.imageData, 0, 0);
+      updatePendingShape(state.pendingShape);
     }
   };
 
@@ -156,7 +192,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         }
         
         // Save initial state to history
-        setTimeout(saveHistoryState, 100);
+        setTimeout(() => saveHistoryState(true), 100);
       } catch (err) {
         console.error("Error loading document:", err);
       } finally {
@@ -407,7 +443,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       lastPoint.current = pos;
       draw(e);
     } else if (tool === 'area' || tool === 'line') {
-      setPendingShape({
+      updatePendingShape({
         type: tool,
         startX: pos.x,
         startY: pos.y,
@@ -422,11 +458,11 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     e.preventDefault();
     const pos = getMousePos(e);
 
-    if (resizingHandle && pendingShape) {
+    if (resizingHandle && pendingShapeRef.current) {
       const dx = pos.x - lastPoint.current!.x;
       const dy = pos.y - lastPoint.current!.y;
 
-      setPendingShape(prev => {
+      updatePendingShape(prev => {
         if (!prev) return prev;
         const next = { ...prev };
         
@@ -456,8 +492,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       return;
     }
 
-    if (pendingShape?.status === 'drawing') {
-      setPendingShape(prev => prev ? { ...prev, endX: pos.x, endY: pos.y } : null);
+    if (pendingShapeRef.current?.status === 'drawing') {
+      updatePendingShape(prev => prev ? { ...prev, endX: pos.x, endY: pos.y } : null);
       return;
     }
 
@@ -478,37 +514,55 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
   };
 
   const stopDrawing = () => {
+    let didChangeShape = false;
+    
     if (isDrawing.current && tool === 'brush') {
-      saveHistoryState();
+      saveHistoryState(true);
     }
+    
+    if (resizingHandle) {
+      didChangeShape = true;
+    }
+
+    if (pendingShapeRef.current?.status === 'drawing') {
+      updatePendingShape(prev => prev ? { ...prev, status: 'pending' } : null);
+      didChangeShape = true;
+    }
+    
     isDrawing.current = false;
     lastPoint.current = null;
     setResizingHandle(null);
-    if (pendingShape?.status === 'drawing') {
-      setPendingShape(prev => prev ? { ...prev, status: 'pending' } : null);
+    
+    if (didChangeShape && tool !== 'brush') {
+      // Small timeout to allow state to flush to pendingShapeRef
+      setTimeout(() => saveHistoryState(false), 10);
     }
   };
 
   const confirmShape = () => {
-    if (!pendingShape || !ctxRef.current) return;
+    if (!pendingShapeRef.current || !ctxRef.current) return;
     const ctx = ctxRef.current;
+    const shape = pendingShapeRef.current;
     ctx.fillStyle = '#000000';
-    if (pendingShape.type === 'area') {
-      const x = Math.min(pendingShape.startX, pendingShape.endX);
-      const y = Math.min(pendingShape.startY, pendingShape.endY);
-      const w = Math.abs(pendingShape.endX - pendingShape.startX);
-      const h = Math.abs(pendingShape.endY - pendingShape.startY);
+    if (shape.type === 'area') {
+      const x = Math.min(shape.startX, shape.endX);
+      const y = Math.min(shape.startY, shape.endY);
+      const w = Math.abs(shape.endX - shape.startX);
+      const h = Math.abs(shape.endY - shape.startY);
       ctx.fillRect(x, y, w, h);
-    } else if (pendingShape.type === 'line') {
-      const x = Math.min(pendingShape.startX, pendingShape.endX);
-      const w = Math.abs(pendingShape.endX - pendingShape.startX);
-      ctx.fillRect(x, pendingShape.startY - brushSize / 2, w, brushSize);
+    } else if (shape.type === 'line') {
+      const x = Math.min(shape.startX, shape.endX);
+      const w = Math.abs(shape.endX - shape.startX);
+      ctx.fillRect(x, shape.startY - brushSize / 2, w, brushSize);
     }
-    setPendingShape(null);
-    saveHistoryState();
+    updatePendingShape(null);
+    setTimeout(() => saveHistoryState(true), 10);
   };
 
-  const cancelShape = () => setPendingShape(null);
+  const cancelShape = () => {
+    updatePendingShape(null);
+    setTimeout(() => saveHistoryState(false), 10);
+  };
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
