@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import piexif from 'piexifjs';
 import Tesseract from 'tesseract.js';
 import { jsPDF } from 'jspdf';
+import { Check, X } from 'lucide-react';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 // Initialize PDF.js worker
@@ -11,7 +12,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 interface DocumentViewerProps {
   file: File;
   brushSize: number;
-  tool: 'brush' | 'auto';
+  tool: 'brush' | 'auto' | 'line' | 'area';
   onProcessing: (isProcessing: boolean) => void;
   exportTrigger: { trigger: number, format: string };
 }
@@ -19,6 +20,15 @@ interface DocumentViewerProps {
 interface Point {
   x: number;
   y: number;
+}
+
+interface PendingShape {
+  type: 'line' | 'area';
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  status: 'drawing' | 'pending';
 }
 
 export const DocumentViewer: React.FC<DocumentViewerProps> = ({ 
@@ -29,6 +39,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   exportTrigger
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
   // Drawing state
@@ -36,16 +47,23 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const lastPoint = useRef<Point | null>(null);
   
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const overlayCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+
+  const [pendingShape, setPendingShape] = useState<PendingShape | null>(null);
+  const [resizingHandle, setResizingHandle] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!file || !canvasRef.current) return;
+    if (!file || !canvasRef.current || !overlayCanvasRef.current) return;
 
     const loadDocument = async () => {
       onProcessing(true);
       const canvas = canvasRef.current!;
+      const overlayCanvas = overlayCanvasRef.current!;
       const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+      const oCtx = overlayCanvas.getContext('2d');
+      if (!ctx || !oCtx) return;
       ctxRef.current = ctx;
+      overlayCtxRef.current = oCtx;
 
       try {
         if (file.type === 'application/pdf') {
@@ -56,6 +74,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           const viewport = page.getViewport({ scale: 1.5 });
           canvas.height = viewport.height;
           canvas.width = viewport.width;
+          overlayCanvas.height = viewport.height;
+          overlayCanvas.width = viewport.width;
           
           const renderContext = {
             canvasContext: ctx,
@@ -93,6 +113,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           
           canvas.width = img.width;
           canvas.height = img.height;
+          overlayCanvas.width = img.width;
+          overlayCanvas.height = img.height;
           ctx.drawImage(img, 0, 0);
         }
       } catch (err) {
@@ -134,9 +156,56 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     }
   }, [exportTrigger]);
 
-  // Drawing Handlers
+  // Draw overlay shape
+  useEffect(() => {
+    const oCtx = overlayCtxRef.current;
+    const overlayCanvas = overlayCanvasRef.current;
+    if (!oCtx || !overlayCanvas) return;
+    
+    oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    
+    if (!pendingShape) return;
+    
+    oCtx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Semi-transparent black for preview
+    const HANDLE_SIZE = 16;
+    
+    if (pendingShape.type === 'area') {
+      const x = Math.min(pendingShape.startX, pendingShape.endX);
+      const y = Math.min(pendingShape.startY, pendingShape.endY);
+      const w = Math.abs(pendingShape.endX - pendingShape.startX);
+      const h = Math.abs(pendingShape.endY - pendingShape.startY);
+      oCtx.fillRect(x, y, w, h);
+      
+      if (pendingShape.status === 'pending') {
+        oCtx.fillStyle = '#10B981'; // Green handles
+        const hs = HANDLE_SIZE;
+        const hhs = hs / 2;
+        oCtx.fillRect(pendingShape.startX - hhs, pendingShape.startY - hhs, hs, hs);
+        oCtx.fillRect(pendingShape.endX - hhs, pendingShape.startY - hhs, hs, hs);
+        oCtx.fillRect(pendingShape.startX - hhs, pendingShape.endY - hhs, hs, hs);
+        oCtx.fillRect(pendingShape.endX - hhs, pendingShape.endY - hhs, hs, hs);
+      }
+    } else if (pendingShape.type === 'line') {
+      const y = pendingShape.startY;
+      const x = Math.min(pendingShape.startX, pendingShape.endX);
+      const w = Math.abs(pendingShape.endX - pendingShape.startX);
+      const h = brushSize;
+      
+      oCtx.fillRect(x, y - h / 2, w, h);
+      
+      if (pendingShape.status === 'pending') {
+        oCtx.fillStyle = '#10B981';
+        const hs = HANDLE_SIZE;
+        const hhs = hs / 2;
+        oCtx.fillRect(pendingShape.startX - hhs, y - hhs, hs, hs);
+        oCtx.fillRect(pendingShape.endX - hhs, y - hhs, hs, hs);
+      }
+    }
+  }, [pendingShape, brushSize]);
+
+  // Event Handlers
   const getMousePos = (e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent) => {
-    const canvas = canvasRef.current;
+    const canvas = overlayCanvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     
@@ -158,45 +227,155 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     };
   };
 
+  const getHandleAtPos = (pos: Point) => {
+    if (!pendingShape || pendingShape.status !== 'pending') return null;
+    const hitArea = 20;
+    
+    if (pendingShape.type === 'area') {
+      const handles = {
+        'nw': { x: pendingShape.startX, y: pendingShape.startY },
+        'ne': { x: pendingShape.endX, y: pendingShape.startY },
+        'sw': { x: pendingShape.startX, y: pendingShape.endY },
+        'se': { x: pendingShape.endX, y: pendingShape.endY }
+      };
+      for (const [key, h] of Object.entries(handles)) {
+        if (Math.abs(pos.x - h.x) <= hitArea && Math.abs(pos.y - h.y) <= hitArea) return key;
+      }
+    } else if (pendingShape.type === 'line') {
+      const handles = {
+        'start': { x: pendingShape.startX, y: pendingShape.startY },
+        'end': { x: pendingShape.endX, y: pendingShape.startY }
+      };
+      for (const [key, h] of Object.entries(handles)) {
+        if (Math.abs(pos.x - h.x) <= hitArea && Math.abs(pos.y - h.y) <= hitArea) return key;
+      }
+    }
+    return null;
+  };
+
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-    if (tool !== 'brush') return;
     e.preventDefault();
-    isDrawing.current = true;
     const pos = getMousePos(e);
-    lastPoint.current = pos;
-    draw(e);
+
+    if (pendingShape?.status === 'pending') {
+      const handle = getHandleAtPos(pos);
+      if (handle) {
+        setResizingHandle(handle);
+        return;
+      }
+      // If clicked outside, let it stay pending
+      if (tool === 'area' || tool === 'line') {
+         // Optionally, clicking outside could start a new shape, but let's just ignore to prevent accidental loss
+         return;
+      }
+    }
+
+    if (tool === 'brush') {
+      isDrawing.current = true;
+      lastPoint.current = pos;
+      draw(e);
+    } else if (tool === 'area' || tool === 'line') {
+      setPendingShape({
+        type: tool,
+        startX: pos.x,
+        startY: pos.y,
+        endX: pos.x,
+        endY: pos.y,
+        status: 'drawing'
+      });
+    }
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent) => {
-    if (!isDrawing.current || !ctxRef.current || tool !== 'brush') return;
     e.preventDefault();
-    
-    const currentPos = getMousePos(e);
-    const ctx = ctxRef.current;
-    
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = brushSize;
-    ctx.strokeStyle = '#000000'; // Blackout color
+    const pos = getMousePos(e);
 
-    ctx.beginPath();
-    if (lastPoint.current) {
-      ctx.moveTo(lastPoint.current.x, lastPoint.current.y);
-      ctx.lineTo(currentPos.x, currentPos.y);
-      ctx.stroke();
+    if (resizingHandle && pendingShape) {
+      setPendingShape(prev => {
+        if (!prev) return prev;
+        const next = { ...prev };
+        if (prev.type === 'area') {
+          if (resizingHandle.includes('n')) next.startY = pos.y;
+          if (resizingHandle.includes('s')) next.endY = pos.y;
+          if (resizingHandle.includes('w')) next.startX = pos.x;
+          if (resizingHandle.includes('e')) next.endX = pos.x;
+        } else if (prev.type === 'line') {
+          if (resizingHandle === 'start') {
+             next.startX = pos.x;
+             next.startY = pos.y; // allow moving the whole line vertically from handles
+          }
+          if (resizingHandle === 'end') {
+             next.endX = pos.x;
+             next.startY = pos.y; // keep it horizontal, update Y if dragged
+          }
+        }
+        return next;
+      });
+      return;
     }
-    
-    lastPoint.current = currentPos;
+
+    if (pendingShape?.status === 'drawing') {
+      setPendingShape(prev => prev ? { ...prev, endX: pos.x, endY: pos.y } : null);
+      return;
+    }
+
+    if (tool === 'brush' && isDrawing.current && ctxRef.current && lastPoint.current) {
+      const ctx = ctxRef.current;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = brushSize;
+      ctx.strokeStyle = '#000000';
+
+      ctx.beginPath();
+      ctx.moveTo(lastPoint.current.x, lastPoint.current.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      
+      lastPoint.current = pos;
+    }
   };
 
   const stopDrawing = () => {
     isDrawing.current = false;
     lastPoint.current = null;
+    setResizingHandle(null);
+    if (pendingShape?.status === 'drawing') {
+      setPendingShape(prev => prev ? { ...prev, status: 'pending' } : null);
+    }
   };
+
+  const confirmShape = () => {
+    if (!pendingShape || !ctxRef.current) return;
+    const ctx = ctxRef.current;
+    ctx.fillStyle = '#000000';
+    if (pendingShape.type === 'area') {
+      const x = Math.min(pendingShape.startX, pendingShape.endX);
+      const y = Math.min(pendingShape.startY, pendingShape.endY);
+      const w = Math.abs(pendingShape.endX - pendingShape.startX);
+      const h = Math.abs(pendingShape.endY - pendingShape.startY);
+      ctx.fillRect(x, y, w, h);
+    } else if (pendingShape.type === 'line') {
+      const x = Math.min(pendingShape.startX, pendingShape.endX);
+      const w = Math.abs(pendingShape.endX - pendingShape.startX);
+      ctx.fillRect(x, pendingShape.startY - brushSize / 2, w, brushSize);
+    }
+    setPendingShape(null);
+  };
+
+  const cancelShape = () => setPendingShape(null);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cancelShape();
+      if (e.key === 'Enter') confirmShape();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  });
 
   // OCR Auto Redact
   const runAutoRedact = async () => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || !ctxRef.current) return;
     onProcessing(true);
     try {
       const dataUrl = canvasRef.current.toDataURL('image/png');
@@ -206,9 +385,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         { logger: m => console.log(m) }
       );
       const words = result.data.words;
-      
       const ctx = ctxRef.current;
-      if (!ctx) return;
       
       const SSN_REGEX = /\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/;
       
@@ -218,7 +395,6 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           ctx.fillRect(word.bbox.x0, word.bbox.y0, word.bbox.x1 - word.bbox.x0, word.bbox.y1 - word.bbox.y0);
         }
       });
-      
     } catch (e) {
       console.error(e);
     } finally {
@@ -226,8 +402,6 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     }
   };
 
-  // Expose auto redact to parent via ref or just listen to tool changes? 
-  // For simplicity, we can watch tool change to 'auto' to trigger, then revert to 'brush'.
   useEffect(() => {
     if (tool === 'auto') {
       runAutoRedact();
@@ -245,10 +419,21 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'auto',
+        position: 'relative'
       }}
     >
       <canvas
         ref={canvasRef}
+        style={{
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          maxWidth: '100%',
+          maxHeight: '100%',
+          objectFit: 'contain',
+          position: 'absolute'
+        }}
+      />
+      <canvas
+        ref={overlayCanvasRef}
         onMouseDown={startDrawing}
         onMouseMove={draw}
         onMouseUp={stopDrawing}
@@ -257,12 +442,49 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         onTouchMove={draw}
         onTouchEnd={stopDrawing}
         style={{
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
           maxWidth: '100%',
           maxHeight: '100%',
           objectFit: 'contain',
+          position: 'absolute',
+          cursor: pendingShape?.status === 'pending' ? 'default' : 'crosshair',
+          zIndex: 5
         }}
       />
+      
+      {pendingShape?.status === 'pending' && (
+        <div 
+          className="floating-toolbar"
+          style={{ 
+            position: 'absolute', 
+            bottom: '2rem',
+            display: 'flex', 
+            gap: '0.5rem', 
+            zIndex: 10, 
+            background: 'var(--surface-color)', 
+            padding: '0.5rem', 
+            borderRadius: 'var(--radius-lg)', 
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+          }}
+        >
+          <button 
+            onClick={confirmShape} 
+            className="btn" 
+            style={{ padding: '0.5rem 1rem', background: 'var(--primary-color)' }} 
+            title="Confirm (Enter)"
+          >
+            <Check size={20} /> Confirm
+          </button>
+          <button 
+            onClick={cancelShape} 
+            className="btn btn-secondary" 
+            style={{ padding: '0.5rem 1rem' }} 
+            title="Cancel (Esc)"
+          >
+            <X size={20} /> Cancel
+          </button>
+        </div>
+      )}
     </div>
   );
 };

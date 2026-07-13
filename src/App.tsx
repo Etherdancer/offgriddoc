@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Download, ShieldAlert, Droplet, Search } from 'lucide-react';
+import { Upload, Download, ShieldAlert, Droplet, Search, Minus, Square } from 'lucide-react';
 import { DocumentViewer } from './components/DocumentViewer';
 import './index.css';
 
@@ -7,7 +7,7 @@ function App() {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [brushSize, setBrushSize] = useState(20);
-  const [tool, setTool] = useState<'brush' | 'auto'>('brush');
+  const [tool, setTool] = useState<'brush' | 'auto' | 'line' | 'area'>('brush');
   const [exportTrigger, setExportTrigger] = useState({ trigger: 0, format: 'pdf' });
   const [exportFormat, setExportFormat] = useState<'pdf' | 'png' | 'jpeg'>('pdf');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -127,6 +127,20 @@ function App() {
                   title="Brush"
                 >
                   <Droplet size={20} />
+                </button>
+                <button 
+                  className={`tool-btn ${tool === 'line' ? 'active' : ''}`} 
+                  onClick={() => setTool('line')}
+                  title="Line Redaction"
+                >
+                  <Minus size={20} />
+                </button>
+                <button 
+                  className={`tool-btn ${tool === 'area' ? 'active' : ''}`} 
+                  onClick={() => setTool('area')}
+                  title="Area Redaction"
+                >
+                  <Square size={20} />
                 </button>
                 <button 
                   className="tool-btn" 
