@@ -611,7 +611,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         const ocrCtx = ocrCanvas.getContext('2d')!;
         ocrCtx.fillStyle = '#ffffff';
         ocrCtx.fillRect(0, 0, ocrCanvas.width, ocrCanvas.height);
-        await page.render({ canvasContext: ocrCtx, viewport }).promise;
+        await page.render({ canvas: ocrCanvas, viewport } as any).promise;
         dataUrl = ocrCanvas.toDataURL('image/png');
       } else if (file) {
         // For images, read the raw file directly — no canvas taint risk
