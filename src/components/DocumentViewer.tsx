@@ -533,8 +533,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     if (!canvasRef.current || !ctxRef.current) return;
     onProcessing(true);
     try {
-      // Use JPEG for faster dataURL creation and smaller size for OCR
-      const dataUrl = canvasRef.current.toDataURL('image/jpeg', 1.0);
+      const dataUrl = canvasRef.current.toDataURL('image/png');
       const result: any = await Tesseract.recognize(
         dataUrl,
         'eng',
@@ -561,13 +560,13 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       });
       
       if (redactedCount > 0) {
-        saveHistoryState();
+        saveHistoryState(true);
       } else {
         alert("No sensitive information (SSN, Email, Phone, Credit Card) found by Auto-Redact.");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert("An error occurred during Auto-Redact OCR.");
+      alert(`An error occurred during Auto-Redact OCR: ${e.message || String(e)}`);
     } finally {
       onProcessing(false);
     }
