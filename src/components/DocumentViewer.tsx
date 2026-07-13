@@ -592,17 +592,41 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     return () => window.removeEventListener('keydown', handleKey);
   });
 
-  // OCR Auto Redact
+    // OCR Auto Redact
   const runAutoRedact = async () => {
     if (!canvasRef.current || !ctxRef.current) return;
     onProcessing(true);
     try {
-      const dataUrl = canvasRef.current.toDataURL('image/png');
-      const result: any = await Tesseract.recognize(
-        dataUrl,
-        ocrLanguage,
-        { logger: m => console.log(m) }
-      );
+      // Re-render document into a fresh, clean canvas for OCR
+      // (avoids tainted-canvas issue from PDF.js which blocks toDataURL)
+      let dataUrl: string;
+      if (file && file.type === 'application/pdf') {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const page = await pdfDoc.getPage(1);
+        const viewport = page.getViewport({ scale: 2.0 }); // 2x scale for better OCR accuracy
+        const ocrCanvas = document.createElement('canvas');
+        ocrCanvas.width = viewport.width;
+        ocrCanvas.height = viewport.height;
+        const ocrCtx = ocrCanvas.getContext('2d')!;
+        ocrCtx.fillStyle = '#ffffff';
+        ocrCtx.fillRect(0, 0, ocrCanvas.width, ocrCanvas.height);
+        await page.render({ canvasContext: ocrCtx, viewport }).promise;
+        dataUrl = ocrCanvas.toDataURL('image/png');
+      } else if (file) {
+        // For images, read the raw file directly — no canvas taint risk
+        dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target!.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      } else {
+        throw new Error('No file loaded');
+      }
+
+      // Run OCR on the clean image
+      const result: any = await Tesseract.recognize(dataUrl, ocrLanguage, { logger: m => console.log(m) });
       const words = result?.data?.words || [];
       const ctx = ctxRef.current;
       
