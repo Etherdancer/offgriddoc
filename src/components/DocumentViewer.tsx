@@ -15,11 +15,12 @@ export interface DocumentViewerRef {
 }
 
 interface DocumentViewerProps {
-  file: File;
+  file: File | null;
   brushSize: number;
   tool: 'brush' | 'auto' | 'line' | 'area';
   onProcessing: (isProcessing: boolean) => void;
   exportTrigger: { trigger: number, format: string };
+  ocrLanguage: string;
 }
 
 interface Point {
@@ -41,7 +42,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
   brushSize, 
   tool,
   onProcessing,
-  exportTrigger
+  exportTrigger,
+  ocrLanguage
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -590,17 +592,25 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       const dataUrl = canvasRef.current.toDataURL('image/png');
       const result: any = await Tesseract.recognize(
         dataUrl,
-        'eng',
+        ocrLanguage,
         { logger: m => console.log(m) }
       );
       const words = result?.data?.words || [];
       const ctx = ctxRef.current;
       
       const patterns = [
-        /\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/, // SSN
-        /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/, // Email
-        /\b(?:\+?1[-. ]?)?\(?([0-9]{3})\)?[-. ]?([0-9]{3})[-. ]?([0-9]{4})\b/, // Phone
-        /\b(?:\d{4}[- ]?){3}\d{4}\b/ // Credit Card
+        // US SSN
+        /\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/, 
+        // International Phone (+48 123 456 789, 123-456-7890, etc)
+        /(?:\+?\d{1,4}[-.\s]?)?(?:\(?\d{2,4}\)?[-.\s]?)?\b\d{3,4}[-.\s]?\d{3,4}[-.\s]?\d{0,4}\b/,
+        // Email
+        /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/, 
+        // Credit Card
+        /\b(?:\d{4}[- ]?){3}\d{4}\b/,
+        // Generic National ID (like 11-digit PESEL, or 9-digit IDs)
+        /\b\d{9,11}\b/,
+        // Passport / ID Card (e.g. ABC 123456)
+        /\b[A-Z]{2,3}[-.\s]?\d{6,7}\b/
       ];
       
       let redactedCount = 0;

@@ -3,11 +3,45 @@ import { Upload, Download, ShieldAlert, Droplet, Search, Minus, Square, Undo, Re
 import { DocumentViewer, type DocumentViewerRef } from './components/DocumentViewer';
 import './index.css';
 
+const OCR_LANGUAGES = [
+  { code: 'eng', name: 'English' },
+  { code: 'pol', name: 'Polish' },
+  { code: 'deu', name: 'German' },
+  { code: 'fra', name: 'French' },
+  { code: 'spa', name: 'Spanish' },
+  { code: 'ita', name: 'Italian' },
+  { code: 'por', name: 'Portuguese' },
+  { code: 'rus', name: 'Russian' },
+  { code: 'chi_sim', name: 'Chinese (Simplified)' },
+  { code: 'chi_tra', name: 'Chinese (Traditional)' },
+  { code: 'jpn', name: 'Japanese' },
+  { code: 'kor', name: 'Korean' },
+  { code: 'ara', name: 'Arabic' },
+  { code: 'hin', name: 'Hindi' },
+  { code: 'tur', name: 'Turkish' },
+  { code: 'nld', name: 'Dutch' },
+  { code: 'swe', name: 'Swedish' },
+  { code: 'dan', name: 'Danish' },
+  { code: 'nor', name: 'Norwegian' },
+  { code: 'fin', name: 'Finnish' },
+  { code: 'ces', name: 'Czech' },
+  { code: 'slk', name: 'Slovak' },
+  { code: 'hun', name: 'Hungarian' },
+  { code: 'ron', name: 'Romanian' },
+  { code: 'ell', name: 'Greek' },
+  { code: 'heb', name: 'Hebrew' },
+  { code: 'tha', name: 'Thai' },
+  { code: 'vie', name: 'Vietnamese' },
+  { code: 'ind', name: 'Indonesian' },
+  { code: 'msa', name: 'Malay' }
+].sort((a, b) => a.name.localeCompare(b.name));
+
 function App() {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [brushSize, setBrushSize] = useState(20);
   const [tool, setTool] = useState<'brush' | 'auto' | 'line' | 'area'>('brush');
+  const [ocrLanguage, setOcrLanguage] = useState('eng');
   const [exportTrigger, setExportTrigger] = useState({ trigger: 0, format: 'pdf' });
   const [exportFormat, setExportFormat] = useState<'pdf' | 'png' | 'jpeg'>('pdf');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -144,14 +178,26 @@ function App() {
                 >
                   <Square size={20} />
                 </button>
-                <button 
-                  className="tool-btn" 
-                  onClick={handleAutoRedact}
-                  disabled={isProcessing}
-                  title="Auto Redact SSNs"
-                >
-                  <Search size={20} />
-                </button>
+                <div className="flex items-center gap-1 bg-[var(--surface-light)] rounded-lg p-1 border border-[var(--border-color)]">
+                  <select
+                    value={ocrLanguage}
+                    onChange={(e) => setOcrLanguage(e.target.value)}
+                    className="bg-transparent text-[var(--text-primary)] text-sm px-2 py-1 outline-none cursor-pointer"
+                    title="OCR Language"
+                  >
+                    {OCR_LANGUAGES.map(lang => (
+                      <option key={lang.code} value={lang.code}>{lang.name}</option>
+                    ))}
+                  </select>
+                  <button 
+                    className="tool-btn !border-none !bg-transparent" 
+                    onClick={handleAutoRedact}
+                    disabled={isProcessing}
+                    title="Auto Redact Sensitive Info"
+                  >
+                    <Search size={20} />
+                  </button>
+                </div>
                 <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 8px' }}></div>
                 <input 
                   type="range" 
@@ -217,6 +263,7 @@ function App() {
                 tool={tool}
                 onProcessing={setIsProcessing}
                 exportTrigger={exportTrigger}
+                ocrLanguage={ocrLanguage}
               />
             </div>
           </div>
