@@ -594,26 +594,31 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
 
     // OCR Auto Redact
   const runAutoRedact = async () => {
-    if (!canvasRef.current || !ctxRef.current) return;
+    if (!canvasRef.current || !ctxRef.current || !file) return;
     onProcessing(true);
     try {
       // Re-render document into a fresh, clean canvas for OCR
       // (avoids tainted-canvas issue from PDF.js which blocks toDataURL)
       let dataUrl: string;
-      if (file && file.type === 'application/pdf') {
+      let ocrWidth = canvasRef.current.width;
+      let ocrHeight = canvasRef.current.height;
+
+      if (file.type === 'application/pdf') {
         const arrayBuffer = await file.arrayBuffer();
         const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const page = await pdfDoc.getPage(1);
         const viewport = page.getViewport({ scale: 2.0 }); // 2x scale for better OCR accuracy
+        ocrWidth = viewport.width;
+        ocrHeight = viewport.height;
         const ocrCanvas = document.createElement('canvas');
-        ocrCanvas.width = viewport.width;
-        ocrCanvas.height = viewport.height;
+        ocrCanvas.width = ocrWidth;
+        ocrCanvas.height = ocrHeight;
         const ocrCtx = ocrCanvas.getContext('2d')!;
         ocrCtx.fillStyle = '#ffffff';
         ocrCtx.fillRect(0, 0, ocrCanvas.width, ocrCanvas.height);
         await page.render({ canvas: ocrCanvas, viewport } as any).promise;
         dataUrl = ocrCanvas.toDataURL('image/png');
-      } else if (file) {
+      } else {
         // For images, read the raw file directly — no canvas taint risk
         dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -621,72 +626,91 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
-      } else {
-        throw new Error('No file loaded');
       }
 
-      // Run OCR on the clean image
       const result: any = await Tesseract.recognize(dataUrl, ocrLanguage, { logger: m => console.log(m) });
-      const words = result?.data?.words || [];
+
+      // Scale factor: OCR rendered at 2x, display canvas is 1x
+      const scaleX = canvasRef.current.width / ocrWidth;
+      const scaleY = canvasRef.current.height / ocrHeight;
+
+      const words: any[] = result?.data?.words || [];
+      const lines: any[] = result?.data?.lines || [];
       const ctx = ctxRef.current;
-      
-      let searchableText = "";
-      const charIndexToWord: number[] = [];
-      
-      words.forEach((word: any, index: number) => {
-        const start = searchableText.length;
-        searchableText += word.text + " ";
-        for (let i = start; i < searchableText.length; i++) {
-          charIndexToWord[i] = index;
-        }
-      });
 
+      // Patterns — handle OCR misreads (@ as &, spaces inside numbers, etc.)
       const patterns = [
-        // 1. Any long sequence of numbers (8 to 16 digits), allowing spaces, dashes, dots, commas (Phone, OIB, SSN, Credit Card)
-        /(?:\b|\+)(?:\d[\s.,-]*){8,16}\b/g,
-        
-        // 2. Alphanumeric IDs (e.g. Passports, IBAN, ID cards) - 2 to 4 letters followed by 6 to 15 digits
-        /\b[A-Za-z]{2,4}[\s.,-]*(?:\d[\s.,-]*){6,15}\b/g,
-        
-        // 3. Emails, allowing spaces around @ and . due to OCR artifacts
-        /\b[A-Za-z0-9._%+-]+[\s]*@[\s]*[A-Za-z0-9.-]+[\s]*\.[\s]*[A-Za-z]{2,}\b/gi,
-        
-        // 4. Fallback for strict dates (DOB) just in case they want those redacted too
-        /\b(?:\d{1,2}[\s.,-/]+){2}\d{2,4}\b/g
+        // Phone numbers / long digit sequences (7–18 digits, spaces/dashes/dots allowed)
+        /(?:\+|00)[\d\s().,-]{7,20}[\d]/g,
+        /\b[\d][\d\s().,-]{6,18}[\d]\b/g,
+        // Email — also match & instead of @ (common OCR misread)
+        /\b[A-Za-z0-9._%+-]+\s*[@&]\s*[A-Za-z0-9.-]+\s*\.\s*[A-Za-z]{2,}\b/gi,
+        // Dates: DD.MM.YYYY, DD/MM/YYYY, DD-MM-YYYY
+        /\b\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}\b/g,
+        // National IDs / postal codes (5+ digit standalone numbers)
+        /\b\d{5,}\b/g,
+        // Alphanumeric IDs (passport, driving licence)
+        /\b[A-Za-z]{1,3}\s*\d{6,}\b/gi,
       ];
-      
-      let redactedCount = 0;
-      const wordsToRedact = new Set<number>();
 
-      patterns.forEach(pattern => {
-        let match;
-        while ((match = pattern.exec(searchableText)) !== null) {
-          const startChar = match.index;
-          const endChar = match.index + match[0].length - 1;
-          const startWordIdx = charIndexToWord[startChar];
-          const endWordIdx = charIndexToWord[endChar];
-          
-          if (startWordIdx !== undefined && endWordIdx !== undefined) {
-            for (let i = startWordIdx; i <= endWordIdx; i++) {
-              wordsToRedact.add(i);
-            }
+      let redactedCount = 0;
+
+      const testPatterns = (text: string) =>
+        patterns.some(p => { p.lastIndex = 0; return p.test(text); });
+
+      // Strategy A: word-level (most precise — redacts only the sensitive token)
+      if (words.length > 0) {
+        // Build full searchable string and map char positions back to word indices
+        let searchableText = '';
+        const charToWord: number[] = [];
+        words.forEach((w: any, i: number) => {
+          const start = searchableText.length;
+          searchableText += w.text + ' ';
+          for (let c = start; c < searchableText.length; c++) charToWord[c] = i;
+        });
+
+        const wordsToRedact = new Set<number>();
+        patterns.forEach(pattern => {
+          const p = new RegExp(pattern.source, pattern.flags);
+          let match;
+          while ((match = p.exec(searchableText)) !== null) {
+            const si = charToWord[match.index];
+            const ei = charToWord[match.index + match[0].length - 1];
+            if (si !== undefined && ei !== undefined)
+              for (let i = si; i <= ei; i++) wordsToRedact.add(i);
           }
-        }
-      });
-      
-      wordsToRedact.forEach(index => {
-        const word = words[index];
-        if (word && word.bbox) {
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(word.bbox.x0, word.bbox.y0, word.bbox.x1 - word.bbox.x0, word.bbox.y1 - word.bbox.y0);
-          redactedCount++;
-        }
-      });
-      
+        });
+
+        wordsToRedact.forEach(idx => {
+          const w = words[idx];
+          if (w?.bbox) {
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(
+              w.bbox.x0 * scaleX, w.bbox.y0 * scaleY,
+              (w.bbox.x1 - w.bbox.x0) * scaleX, (w.bbox.y1 - w.bbox.y0) * scaleY
+            );
+            redactedCount++;
+          }
+        });
+      }
+
+      // Strategy B: line-level (fallback when word bboxes aren't returned — e.g. Croatian)
+      if (redactedCount === 0 && lines.length > 0) {
+        lines.forEach((line: any) => {
+          if (!line?.text || !line?.bbox) return;
+          if (testPatterns(line.text)) {
+            const { x0, y0, x1, y1 } = line.bbox;
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(x0 * scaleX, y0 * scaleY, (x1 - x0) * scaleX, (y1 - y0) * scaleY);
+            redactedCount++;
+          }
+        });
+      }
+
       if (redactedCount > 0) {
         saveHistoryState(true);
       } else {
-        alert("No sensitive information (SSN, Email, Phone, Credit Card) found by Auto-Redact.");
+        alert('No sensitive information (phone, email, date, ID) found by Auto-Redact.');
       }
     } catch (e: any) {
       console.error(e);
