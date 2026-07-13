@@ -608,14 +608,6 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         /\b\d{1,2}[.\/\-]\d{1,2}[.\/\-]\d{2,4}\b/g, // Dates DD/MM/YYYY etc.
         /\b\d{5,}\b/g,                              // Postal codes / long numeric IDs
         /\b[A-Za-z]{1,3}\s*\d{6,}\b/gi,            // Alphanumeric IDs (passport, licence)
-
-        // CV field labels followed by their values — works across all Europass languages
-        // Place of birth
-        /(?:Mjesto\s+ro[đd]enja|Place\s+of\s+birth|Lieu\s+de\s+naissance|Geburtsort|Luogo\s+di\s+nascita|Lugar\s+de\s+nacimiento)[:\s]+[\wÀ-žÀ-ÖØ-öø-ÿ][^:\n]{1,60}/gi,
-        // Nationality / Citizenship
-        /(?:Dr[žz]avljanstvo|Nationality|Nationalité|Staatsangehörigkeit|Nazionalità|Nacionalidad)[:\s]+[\wÀ-žÀ-ÖØ-öø-ÿ][^:\n]{1,40}/gi,
-        // Street address / home address
-        /(?:K[uú][ćc]na\s+adresa|Home\s+address|Adresse|Wohnadresse|Indirizzo|Dirección)[:\s]+[\wÀ-žÀ-ÖØ-öø-ÿ][^:\n]{1,80}/gi,
       ];
 
       const matchPatterns = (text: string): boolean =>
@@ -659,6 +651,49 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
                 for (let i = si; i <= ei; i++) itemsToRedact.add(i);
             }
           });
+
+          // ── Structural detection: personal-info zone label→value pairs ──────
+          // Works for ANY language. In every CV, personal info appears before
+          // the first ALL_CAPS section header (e.g. EDUCATION, WORK EXPERIENCE).
+          // Within that zone we redact the value items that follow label items
+          // (items whose text ends with ":").
+
+          // 1. Find the boundary of the personal section
+          let personalSectionEnd = items.length;
+          for (let si = 3; si < items.length; si++) {
+            const t = items[si].str.trim();
+            // Section header: all uppercase, 4+ chars, no digits
+            if (
+              t.length >= 4 &&
+              t === t.toUpperCase() &&
+              /[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ]/.test(t) &&
+              !/\d/.test(t)
+            ) {
+              personalSectionEnd = si;
+              break;
+            }
+          }
+
+          // 2. Redact value items that follow labels inside the personal section
+          let pi = 0;
+          while (pi < personalSectionEnd) {
+            const labelText = items[pi].str.trim();
+            if (/:\s*$/.test(labelText)) {
+              // This item is a label — consume following value items
+              pi++;
+              while (pi < personalSectionEnd) {
+                const valText = items[pi].str.trim();
+                if (!valText) { pi++; continue; }
+                // Stop when we reach the next label
+                if (/:\s*$/.test(valText)) break;
+                // Redact this value item
+                itemsToRedact.add(pi);
+                pi++;
+              }
+            } else {
+              pi++;
+            }
+          }
 
           // Draw redaction rectangles using PDF viewport coordinate transform
           itemsToRedact.forEach(idx => {

@@ -239,6 +239,43 @@ main {
   border-color: rgba(79, 70, 229, 0.4);
 }
 
+/* Language selector — styled to match tool buttons */
+.lang-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: rgba(255, 255, 255, 0.05);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  padding: 0.45rem 1.6rem 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  font-size: 0.8rem;
+  font-family: inherit;
+  outline: none;
+  min-width: 105px;
+  max-width: 140px;
+}
+
+.lang-select:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.lang-select:focus {
+  border-color: rgba(79, 70, 229, 0.4);
+  color: var(--text-primary);
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.lang-select option {
+  background: #1E293B;
+  color: #F8FAFC;
+}
+
 .canvas-wrapper {
   flex: 1;
   position: relative;

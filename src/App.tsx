@@ -273,27 +273,26 @@ function App() {
                 >
                   <Square size={20} />
                 </button>
-                <div className="flex items-center gap-1 bg-[var(--surface-light)] rounded-lg p-1 border border-[var(--border-color)]">
-                  <select
-                    value={ocrLanguage}
-                    onChange={(e) => setOcrLanguage(e.target.value)}
-                    className="bg-transparent text-[var(--text-primary)] text-sm px-2 py-1 outline-none cursor-pointer"
-                    title="OCR Language"
-                  >
-                    {OCR_LANGUAGES.map(lang => (
-                      <option key={lang.code} value={lang.code}>{lang.name}</option>
-                    ))}
-                  </select>
-                  <button 
-                    className="tool-btn !border-none !bg-transparent" 
-                    onClick={handleAutoRedact}
-                    disabled={isProcessing}
-                    title="Auto Redact Sensitive Info"
-                  >
-                    <Wand2 size={20} />
-                  </button>
-                </div>
-                <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 8px' }}></div>
+                <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 4px' }}></div>
+                <select
+                  value={ocrLanguage}
+                  onChange={(e) => setOcrLanguage(e.target.value)}
+                  className="lang-select"
+                  title="OCR Language (used for scanned documents)"
+                >
+                  {OCR_LANGUAGES.map(lang => (
+                    <option key={lang.code} value={lang.code}>{lang.name}</option>
+                  ))}
+                </select>
+                <button 
+                  className="tool-btn" 
+                  onClick={handleAutoRedact}
+                  disabled={isProcessing}
+                  title="Auto-Redact Sensitive Info"
+                >
+                  <Wand2 size={20} />
+                </button>
+                <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 4px' }}></div>
                 <input 
                   type="range" 
                   min="5" max="50" 
