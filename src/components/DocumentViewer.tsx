@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import piexif from 'piexifjs';
 import Tesseract from 'tesseract.js';
@@ -8,6 +8,11 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 // Initialize PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+
+export interface DocumentViewerRef {
+  undo: () => void;
+  redo: () => void;
+}
 
 interface DocumentViewerProps {
   file: File;
@@ -31,13 +36,13 @@ interface PendingShape {
   status: 'drawing' | 'pending';
 }
 
-export const DocumentViewer: React.FC<DocumentViewerProps> = ({ 
+export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>(({ 
   file, 
   brushSize, 
   tool,
   onProcessing,
   exportTrigger
-}) => {
+}, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +83,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       ctxRef.current.putImageData(historyRef.current[historyStepRef.current], 0, 0);
     }
   };
+
+  useImperativeHandle(ref, () => ({
+    undo,
+    redo
+  }));
 
   useEffect(() => {
     if (!file || !canvasRef.current || !overlayCanvasRef.current) return;
@@ -523,7 +533,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     if (!canvasRef.current || !ctxRef.current) return;
     onProcessing(true);
     try {
-      const dataUrl = canvasRef.current.toDataURL('image/png');
+      // Use JPEG for faster dataURL creation and smaller size for OCR
+      const dataUrl = canvasRef.current.toDataURL('image/jpeg', 1.0);
       const result: any = await Tesseract.recognize(
         dataUrl,
         'eng',
@@ -532,17 +543,31 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       const words = result.data.words;
       const ctx = ctxRef.current;
       
-      const SSN_REGEX = /\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/;
+      const patterns = [
+        /\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/, // SSN
+        /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/, // Email
+        /\b(?:\+?1[-. ]?)?\(?([0-9]{3})\)?[-. ]?([0-9]{3})[-. ]?([0-9]{4})\b/, // Phone
+        /\b(?:\d{4}[- ]?){3}\d{4}\b/ // Credit Card
+      ];
       
+      let redactedCount = 0;
       words.forEach((word: any) => {
-        if (SSN_REGEX.test(word.text)) {
+        const shouldRedact = patterns.some(pattern => pattern.test(word.text));
+        if (shouldRedact) {
           ctx.fillStyle = '#000000';
           ctx.fillRect(word.bbox.x0, word.bbox.y0, word.bbox.x1 - word.bbox.x0, word.bbox.y1 - word.bbox.y0);
+          redactedCount++;
         }
       });
-      saveHistoryState();
+      
+      if (redactedCount > 0) {
+        saveHistoryState();
+      } else {
+        alert("No sensitive information (SSN, Email, Phone, Credit Card) found by Auto-Redact.");
+      }
     } catch (e) {
       console.error(e);
+      alert("An error occurred during Auto-Redact OCR.");
     } finally {
       onProcessing(false);
     }
@@ -619,4 +644,4 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       )}
     </div>
   );
-};
+});

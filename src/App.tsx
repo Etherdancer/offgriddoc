@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Upload, Download, ShieldAlert, Droplet, Search, Minus, Square } from 'lucide-react';
-import { DocumentViewer } from './components/DocumentViewer';
+import React, { useState, useEffect, useRef } from 'react';
+import { Upload, Download, ShieldAlert, Droplet, Search, Minus, Square, Undo, Redo } from 'lucide-react';
+import { DocumentViewer, type DocumentViewerRef } from './components/DocumentViewer';
 import './index.css';
 
 function App() {
@@ -11,6 +11,8 @@ function App() {
   const [exportTrigger, setExportTrigger] = useState({ trigger: 0, format: 'pdf' });
   const [exportFormat, setExportFormat] = useState<'pdf' | 'png' | 'jpeg'>('pdf');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  
+  const viewerRef = useRef<DocumentViewerRef>(null);
 
   useEffect(() => {
     if (file) {
@@ -159,6 +161,21 @@ function App() {
                   className="range-slider" 
                   title="Brush Size" 
                 />
+                <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 8px' }}></div>
+                <button 
+                  className="tool-btn" 
+                  onClick={() => viewerRef.current?.undo()}
+                  title="Undo (Ctrl+Z)"
+                >
+                  <Undo size={20} />
+                </button>
+                <button 
+                  className="tool-btn" 
+                  onClick={() => viewerRef.current?.redo()}
+                  title="Redo (Ctrl+Y)"
+                >
+                  <Redo size={20} />
+                </button>
               </div>
               <div className="tools-group">
                 <select 
@@ -194,6 +211,7 @@ function App() {
                 </div>
               )}
               <DocumentViewer 
+                ref={viewerRef}
                 file={file} 
                 brushSize={brushSize}
                 tool={tool}
