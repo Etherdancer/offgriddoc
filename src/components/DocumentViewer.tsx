@@ -593,7 +593,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         'eng',
         { logger: m => console.log(m) }
       );
-      const words = result.data.words;
+      const words = result?.data?.words || [];
       const ctx = ctxRef.current;
       
       const patterns = [
