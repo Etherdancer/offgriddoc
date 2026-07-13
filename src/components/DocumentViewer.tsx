@@ -598,25 +598,56 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       const words = result?.data?.words || [];
       const ctx = ctxRef.current;
       
+      let searchableText = "";
+      const charIndexToWord: number[] = [];
+      
+      words.forEach((word: any, index: number) => {
+        const start = searchableText.length;
+        searchableText += word.text + " ";
+        for (let i = start; i < searchableText.length; i++) {
+          charIndexToWord[i] = index;
+        }
+      });
+
       const patterns = [
         // US SSN
-        /\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/, 
-        // International Phone (+48 123 456 789, 123-456-7890, etc)
-        /(?:\+?\d{1,4}[-.\s]?)?(?:\(?\d{2,4}\)?[-.\s]?)?\b\d{3,4}[-.\s]?\d{3,4}[-.\s]?\d{0,4}\b/,
+        /\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/g, 
+        // International Phone / Dates (highly permissive for 8-15 digits with spaces/dashes)
+        /(?:\+?\d{1,4}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\b(?:\d{2,4}[\s.-]?){2,4}\d{2,4}\b/g,
         // Email
-        /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/, 
+        /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/gi, 
         // Credit Card
-        /\b(?:\d{4}[- ]?){3}\d{4}\b/,
+        /\b(?:\d{4}[- ]?){3}\d{4}\b/g,
         // Generic National ID (like 11-digit PESEL, or 9-digit IDs)
-        /\b\d{9,11}\b/,
+        /\b\d{9,11}\b/g,
         // Passport / ID Card (e.g. ABC 123456)
-        /\b[A-Z]{2,3}[-.\s]?\d{6,7}\b/
+        /\b[A-Za-z]{2,3}[\s.-]?\d{6,7}\b/gi,
+        // IBAN (European Bank Accounts)
+        /\b[A-Za-z]{2}\d{2}(?:[\s.-]?\d{4}){3,5}[\s.-]?\d{1,4}\b/gi
       ];
       
       let redactedCount = 0;
-      words.forEach((word: any) => {
-        const shouldRedact = patterns.some(pattern => pattern.test(word.text));
-        if (shouldRedact) {
+      const wordsToRedact = new Set<number>();
+
+      patterns.forEach(pattern => {
+        let match;
+        while ((match = pattern.exec(searchableText)) !== null) {
+          const startChar = match.index;
+          const endChar = match.index + match[0].length - 1;
+          const startWordIdx = charIndexToWord[startChar];
+          const endWordIdx = charIndexToWord[endChar];
+          
+          if (startWordIdx !== undefined && endWordIdx !== undefined) {
+            for (let i = startWordIdx; i <= endWordIdx; i++) {
+              wordsToRedact.add(i);
+            }
+          }
+        }
+      });
+      
+      wordsToRedact.forEach(index => {
+        const word = words[index];
+        if (word && word.bbox) {
           ctx.fillStyle = '#000000';
           ctx.fillRect(word.bbox.x0, word.bbox.y0, word.bbox.x1 - word.bbox.x0, word.bbox.y1 - word.bbox.y0);
           redactedCount++;
