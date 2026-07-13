@@ -462,6 +462,34 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         status: 'drawing'
       });
     }
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    if (overlayCanvasRef.current) {
+      if (pendingShapeRef.current?.status === 'pending' && !resizingHandle) {
+        const pos = getMousePos(e);
+        const handle = getHandleAtPos(pos);
+        if (handle === 'move') {
+          overlayCanvasRef.current.style.cursor = 'move';
+        } else if (handle === 'nw' || handle === 'se') {
+          overlayCanvasRef.current.style.cursor = 'nwse-resize';
+        } else if (handle === 'ne' || handle === 'sw') {
+          overlayCanvasRef.current.style.cursor = 'nesw-resize';
+        } else if (handle === 'start' || handle === 'end') {
+          overlayCanvasRef.current.style.cursor = 'ew-resize';
+        } else {
+          overlayCanvasRef.current.style.cursor = 'default';
+        }
+      } else if (!pendingShapeRef.current || pendingShapeRef.current.status !== 'pending') {
+         overlayCanvasRef.current.style.cursor = 'crosshair';
+      }
+    }
+
+    if (isDrawing.current || resizingHandle || pendingShapeRef.current?.status === 'drawing') {
+      draw(e);
+    }
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent) => {
@@ -885,18 +913,18 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       <canvas
         ref={overlayCanvasRef}
         onMouseDown={startDrawing}
-        onMouseMove={draw}
+        onMouseMove={handleMouseMove}
         onMouseUp={stopDrawing}
         onMouseLeave={stopDrawing}
         onTouchStart={startDrawing}
-        onTouchMove={draw}
+        onTouchMove={handleMouseMove}
         onTouchEnd={stopDrawing}
         style={{
           maxWidth: '100%',
           maxHeight: '100%',
           objectFit: 'contain',
           position: 'absolute',
-          cursor: pendingShape?.status === 'pending' ? 'default' : 'crosshair',
+          cursor: 'crosshair',
           zIndex: 5
         }}
       />
