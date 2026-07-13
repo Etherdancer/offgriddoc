@@ -462,7 +462,6 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         status: 'drawing'
       });
     }
-    }
   };
 
   const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
