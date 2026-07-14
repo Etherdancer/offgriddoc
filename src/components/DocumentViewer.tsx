@@ -637,6 +637,18 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         /\b\d{1,2}\s*[.\/\-]\s*\d{1,2}\s*[.\/\-]\s*\d{2,4}\b/g,     // Dates DD/MM/YYYY etc (with optional spaces from OCR)
         /\b\d{5,}\b/g,                              // Postal codes / long numeric IDs
         /\b[A-Za-z]{1,3}\s*\d{6,}\b/gi,            // Alphanumeric IDs (passport, licence)
+        
+        // --- Multi-lingual Label-Value Matchers (Capture Group 1 is redacted) ---
+        // Place of birth
+        /\b(?:mjesto ro[đd]enja|place of birth|geburtsort|lieu de naissance|lugar de nacimiento|luogo di nascita)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        // Citizenship / Nationality
+        /\b(?:dr[žz]avljanstvo|nacionalnost|citizenship|nationality|staatsangeh[öo]rigkeit|nationalit[ée]|nacionalidad|cittadinanza)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        // Gender / Sex
+        /\b(?:spol|gender|sex|geschlecht|sexe|g[ée]nero|sesso)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        // Name
+        /\b(?:ime i prezime|full name|name|nom|nombre|nome|first name|last name|ime|prezime)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        // Address / Residence
+        /\b(?:adresa|address|adresse|direcci[óo]n|indirizzo|prebivali[šs]te|boravi[šs]te)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi
       ];
 
       const matchPatterns = (text: string): boolean =>
@@ -675,8 +687,13 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
             const p = new RegExp(pattern.source, pattern.flags);
             let match;
             while ((match = p.exec(text)) !== null) {
-              const si = charToWord[match.index];
-              const ei = charToWord[match.index + match[0].length - 1];
+              let val = match[1] || match[0];
+              val = val.trim(); // remove leading/trailing space from value
+              if (!val) continue;
+              const matchStart = match.index + match[0].lastIndexOf(val);
+              const matchEnd = matchStart + val.length - 1;
+              const si = charToWord[matchStart];
+              const ei = charToWord[matchEnd];
               if (si !== undefined && ei !== undefined)
                 for (let i = si; i <= ei; i++) wordsToRedact.add(i);
             }
@@ -729,8 +746,13 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
               const p = new RegExp(pattern.source, pattern.flags);
               let match;
               while ((match = p.exec(tsvText)) !== null) {
-                const si = charToTsvWord[match.index];
-                const ei = charToTsvWord[match.index + match[0].length - 1];
+                let val = match[1] || match[0];
+                val = val.trim();
+                if (!val) continue;
+                const matchStart = match.index + match[0].lastIndexOf(val);
+                const matchEnd = matchStart + val.length - 1;
+                const si = charToTsvWord[matchStart];
+                const ei = charToTsvWord[matchEnd];
                 if (si !== undefined && ei !== undefined)
                   for (let i = si; i <= ei; i++) tsvToRedact.add(i);
               }
@@ -782,8 +804,13 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
             const p = new RegExp(pattern.source, pattern.flags);
             let match;
             while ((match = p.exec(searchableText)) !== null) {
-              const si = charToItem[match.index];
-              const ei = charToItem[match.index + match[0].length - 1];
+              let val = match[1] || match[0];
+              val = val.trim();
+              if (!val) continue;
+              const matchStart = match.index + match[0].lastIndexOf(val);
+              const matchEnd = matchStart + val.length - 1;
+              const si = charToItem[matchStart];
+              const ei = charToItem[matchEnd];
               if (si !== undefined && ei !== undefined)
                 for (let i = si; i <= ei; i++) itemsToRedact.add(i);
             }
