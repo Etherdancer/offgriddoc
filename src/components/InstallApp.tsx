@@ -6,6 +6,7 @@ export const InstallApp: React.FC = () => {
   const [isIOS, setIsIOS] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [showIOSModal, setShowIOSModal] = useState(false);
+  const [showGenericModal, setShowGenericModal] = useState(false);
 
   useEffect(() => {
     // Check if already installed
@@ -31,10 +32,8 @@ export const InstallApp: React.FC = () => {
     return null;
   }
 
-  // Only show the install button if we have a prompt (Android/Desktop) OR if it's iOS (where prompt is never fired)
-  if (!deferredPrompt && !isIOS) {
-    return null;
-  }
+  // Always show the install button if not standalone, to support manual install instructions
+  // if (!deferredPrompt && !isIOS) { return null; }
 
   const handleInstallClick = () => {
     if (isIOS) {
@@ -44,6 +43,9 @@ export const InstallApp: React.FC = () => {
       deferredPrompt.userChoice.then(() => {
         setDeferredPrompt(null);
       });
+    } else {
+      // Fallback for browsers that don't support beforeinstallprompt (Firefox, Desktop Safari, etc.)
+      setShowGenericModal(true);
     }
   };
 
@@ -78,6 +80,32 @@ export const InstallApp: React.FC = () => {
                 <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
               </ol>
               <button className="btn btn-primary" onClick={() => setShowIOSModal(false)} style={{ width: '100%', marginTop: '1rem' }}>
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGenericModal && (
+        <div className="modal-overlay" onClick={() => setShowGenericModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '450px', textAlign: 'center' }}>
+            <div className="modal-header">
+              <h2>Install App</h2>
+              <button className="icon-btn" onClick={() => setShowGenericModal(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', textAlign: 'left' }}>
+              <p style={{ margin: 0 }}>
+                Your browser blocked the automatic install prompt, but you can still install OffGridDoc manually:
+              </p>
+              <ul style={{ margin: '0', paddingLeft: '1.5rem', lineHeight: '1.6' }}>
+                <li><strong>Chrome / Edge / Brave:</strong> Click the install icon (monitor with a downward arrow) on the far-right side of your URL address bar.</li>
+                <li><strong>Firefox:</strong> Natively unsupported on desktop, but you can install the "PWAsForFirefox" extension to enable it.</li>
+                <li><strong>Desktop Safari:</strong> Click "File" &gt; "Add to Dock" from the top menu bar.</li>
+              </ul>
+              <button className="btn btn-primary" onClick={() => setShowGenericModal(false)} style={{ width: '100%', marginTop: '1rem' }}>
                 Got it
               </button>
             </div>
