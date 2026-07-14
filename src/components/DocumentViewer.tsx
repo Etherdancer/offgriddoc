@@ -836,24 +836,14 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
             redactedCount++;
           });
 
-        }
-        
         if (redactedCount === 0) {
           // Scanned PDF (or PDF with garbage embedded text) — fall back to Tesseract OCR
-          const ocrVp = page.getViewport({ scale: displayScale * 2 });
-          const ocrCanvas = document.createElement('canvas');
-          ocrCanvas.width = ocrVp.width;
-          ocrCanvas.height = ocrVp.height;
-          const ocrCtx = ocrCanvas.getContext('2d')!;
-          ocrCtx.fillStyle = '#ffffff';
-          ocrCtx.fillRect(0, 0, ocrCanvas.width, ocrCanvas.height);
-          await page.render({ canvasContext: ocrCtx, viewport: ocrVp } as any).promise;
-          const dataUrl = ocrCanvas.toDataURL('image/png');
+          // We use the already-rendered main canvas to guarantee we feed Tesseract exactly what the user sees
+          const dataUrl = canvasRef.current.toDataURL('image/png');
           const langStr = ocrLanguage === 'eng' ? 'eng' : `${ocrLanguage}+eng`;
           const result: any = await Tesseract.recognize(dataUrl, langStr, { logger: m => console.log(m) });
-          const sX = canvasRef.current.width / ocrCanvas.width;
-          const sY = canvasRef.current.height / ocrCanvas.height;
-          redactedCount += processTesseractResult(result, sX, sY);
+          // Since dataUrl is generated from canvasRef, the scale factors are exactly 1
+          redactedCount += processTesseractResult(result, 1, 1);
         }
 
       } else {
