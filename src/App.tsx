@@ -186,8 +186,9 @@ function App() {
     <div className="app-container">
       <header>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <a href="https://etherdancer-homepage.pages.dev" title="Back to Etherdancer Apps" style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', transition: 'color 0.2s' }}>
-            <LayoutGrid size={24} />
+          <a href="https://etherdancer-homepage.pages.dev" title="Back to Etherdancer Apps" style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none', fontSize: '0.85rem', transition: 'color 0.2s' }}>
+            <LayoutGrid size={18} />
+            <span className="hide-on-mobile">Etherdancer Homepage</span>
           </a>
           <div className="logo-section">
             <div className="logo-icon">
