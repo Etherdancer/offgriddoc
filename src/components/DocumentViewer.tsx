@@ -58,6 +58,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
 
   const [pendingShape, setPendingShape] = useState<PendingShape | null>(null);
   const [resizingHandle, setResizingHandle] = useState<string | null>(null);
+  const [debugText, setDebugText] = useState<string | null>(null);
 
   // History state for Undo/Redo
   interface HistoryState {
@@ -626,6 +627,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     try {
       const ctx = ctxRef.current;
       let redactedCount = 0;
+      let dbg = `=== AUTO REDACT DEBUG LOG ===\n\nFile Type: ${file.type}\n`;
 
       // Sensitive-data patterns
       const patterns = [
@@ -748,6 +750,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
 
         const textContent = await page.getTextContent();
         const items: any[] = (textContent.items as any[]).filter((it: any) => it.str?.trim());
+        dbg += `PDF.js Extracted Text Items: ${items.length}\n`;
 
         if (items.length > 3) {
           // Build a single searchable string, mapping char positions → item index
@@ -758,6 +761,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
             searchableText += item.str + ' ';
             for (let c = start; c < searchableText.length; c++) charToItem[c] = i;
           });
+          dbg += `PDF.js Searchable Text length: ${searchableText.length}\n`;
+          dbg += `PDF.js Preview: "${searchableText.substring(0, 200)}..."\n`;
 
           // Find all sensitive pattern matches
           const itemsToRedact = new Set<number>();
@@ -835,14 +840,19 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
             ctx.fillRect(cx - 1, cy - fontH * 1.1, textW + 4, fontH * 1.4);
             redactedCount++;
           });
+          dbg += `PDF.js Regex matched items: ${itemsToRedact.size}\n`;
         }
 
         if (redactedCount === 0) {
+          dbg += `\n[FALLBACK] PDF.js yielded 0 redactions. Falling back to OCR...\n`;
           // Scanned PDF (or PDF with garbage embedded text) — fall back to Tesseract OCR
           // We use the already-rendered main canvas to guarantee we feed Tesseract exactly what the user sees
           const dataUrl = canvasRef.current.toDataURL('image/png');
           const langStr = ocrLanguage === 'eng' ? 'eng' : `${ocrLanguage}+eng`;
+          dbg += `Tesseract Language: ${langStr}\n`;
           const result: any = await Tesseract.recognize(dataUrl, langStr, { logger: m => console.log(m) });
+          dbg += `Tesseract Extracted Text: "${(result?.data?.text || '').substring(0, 200)}..."\n`;
+          dbg += `Tesseract Words array length: ${result?.data?.words?.length || 0}\n`;
           // Since dataUrl is generated from canvasRef, the scale factors are exactly 1
           redactedCount += processTesseractResult(result, 1, 1);
         }
@@ -856,7 +866,10 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           reader.readAsDataURL(file);
         });
         const langStr = ocrLanguage === 'eng' ? 'eng' : `${ocrLanguage}+eng`;
+        dbg += `Tesseract Language: ${langStr}\n`;
         const result: any = await Tesseract.recognize(dataUrl, langStr, { logger: m => console.log(m) });
+        dbg += `Tesseract Extracted Text: "${(result?.data?.text || '').substring(0, 200)}..."\n`;
+        dbg += `Tesseract Words array length: ${result?.data?.words?.length || 0}\n`;
         const sX = canvasRef.current.width / (result?.data?.imageWidth || canvasRef.current.width);
         const sY = canvasRef.current.height / (result?.data?.imageHeight || canvasRef.current.height);
         redactedCount += processTesseractResult(result, sX, sY);
@@ -865,8 +878,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       if (redactedCount > 0) {
         saveHistoryState(true);
       } else {
-        const ocrDbg = ((window as any).lastOcrText || '').substring(0, 400);
-        alert(`No sensitive information found. [DEBUG OCR TEXT: ${ocrDbg}]`);
+        setDebugText(dbg);
       }
     } catch (e: any) {
       console.error(e);
@@ -943,6 +955,37 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           >
             <X size={20} />
           </button>
+        </div>
+      )}
+
+      {debugText && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 9999,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem'
+        }}>
+          <div style={{
+            background: 'var(--bg-card)', padding: '2rem', borderRadius: '12px',
+            width: '100%', maxWidth: '800px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', gap: '1rem'
+          }}>
+            <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>Auto-Redact Debug Log</h3>
+            <textarea 
+              readOnly 
+              value={debugText} 
+              style={{
+                flex: 1, width: '100%', background: '#111', color: '#0f0', 
+                fontFamily: 'monospace', padding: '1rem', border: 'none', borderRadius: '8px',
+                resize: 'none', outline: 'none', whiteSpace: 'pre-wrap'
+              }}
+            />
+            <button 
+              onClick={() => setDebugText(null)}
+              className="btn" 
+              style={{ background: 'var(--primary-color)', alignSelf: 'flex-end', padding: '0.75rem 2rem' }}
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
     </div>
