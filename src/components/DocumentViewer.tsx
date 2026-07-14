@@ -836,8 +836,10 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
             redactedCount++;
           });
 
-        } else {
-          // Scanned PDF — fall back to Tesseract OCR
+        }
+        
+        if (redactedCount === 0) {
+          // Scanned PDF (or PDF with garbage embedded text) — fall back to Tesseract OCR
           const ocrVp = page.getViewport({ scale: displayScale * 2 });
           const ocrCanvas = document.createElement('canvas');
           ocrCanvas.width = ocrVp.width;
