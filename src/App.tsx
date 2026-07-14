@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Upload, Download, ShieldAlert, Droplet, Wand2, Minus, Square, Undo, Redo } from 'lucide-react';
+import { InstallApp } from './components/InstallApp';
 import { DocumentViewer, type DocumentViewerRef } from './components/DocumentViewer';
 import './index.css';
 
@@ -139,7 +140,6 @@ function App() {
   const [ocrLanguage, setOcrLanguage] = useState('eng');
   const [exportTrigger, setExportTrigger] = useState({ trigger: 0, format: 'pdf' });
   const [exportFormat, setExportFormat] = useState<'pdf' | 'png' | 'jpeg'>('pdf');
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   
   const viewerRef = useRef<DocumentViewerRef>(null);
 
@@ -154,24 +154,6 @@ function App() {
       }
     }
   }, [file]);
-
-  useEffect(() => {
-    const handler = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  const handleInstallClick = () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.then(() => {
-        setDeferredPrompt(null);
-      });
-    }
-  };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -213,15 +195,7 @@ function App() {
           </div>
         </div>
         <div className="status-badge">
-          {deferredPrompt && (
-            <button 
-              onClick={handleInstallClick} 
-              className="btn" 
-              style={{ padding: '0.25rem 0.75rem', fontSize: '0.875rem', gap: '0.25rem' }}
-            >
-              <Download size={14} /> Install App
-            </button>
-          )}
+          <InstallApp />
           <div className="status-dot"></div>
           Offline Ready
         </div>
