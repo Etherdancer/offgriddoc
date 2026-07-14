@@ -729,6 +729,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
             });
           }
         }
+        (window as any).lastOcrText = tsv || '';
         return count;
       };
 
@@ -846,7 +847,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           ocrCtx.fillRect(0, 0, ocrCanvas.width, ocrCanvas.height);
           await page.render({ canvasContext: ocrCtx, viewport: ocrVp } as any).promise;
           const dataUrl = ocrCanvas.toDataURL('image/png');
-          const result: any = await Tesseract.recognize(dataUrl, ocrLanguage, { logger: m => console.log(m) });
+          const langStr = ocrLanguage === 'eng' ? 'eng' : `${ocrLanguage}+eng`;
+          const result: any = await Tesseract.recognize(dataUrl, langStr, { logger: m => console.log(m) });
           const sX = canvasRef.current.width / ocrCanvas.width;
           const sY = canvasRef.current.height / ocrCanvas.height;
           redactedCount += processTesseractResult(result, sX, sY);
@@ -860,7 +862,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
-        const result: any = await Tesseract.recognize(dataUrl, ocrLanguage, { logger: m => console.log(m) });
+        const langStr = ocrLanguage === 'eng' ? 'eng' : `${ocrLanguage}+eng`;
+        const result: any = await Tesseract.recognize(dataUrl, langStr, { logger: m => console.log(m) });
         const sX = canvasRef.current.width / (result?.data?.imageWidth || canvasRef.current.width);
         const sY = canvasRef.current.height / (result?.data?.imageHeight || canvasRef.current.height);
         redactedCount += processTesseractResult(result, sX, sY);
@@ -869,7 +872,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       if (redactedCount > 0) {
         saveHistoryState(true);
       } else {
-        alert('No sensitive information (phone, email, date, ID) found by Auto-Redact.');
+        const ocrDbg = ((window as any).lastOcrText || '').substring(0, 400);
+        alert(`No sensitive information found. [DEBUG OCR TEXT: ${ocrDbg}]`);
       }
     } catch (e: any) {
       console.error(e);
