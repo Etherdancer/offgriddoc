@@ -835,6 +835,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
             ctx.fillRect(cx - 1, cy - fontH * 1.1, textW + 4, fontH * 1.4);
             redactedCount++;
           });
+        }
 
         if (redactedCount === 0) {
           // Scanned PDF (or PDF with garbage embedded text) — fall back to Tesseract OCR
