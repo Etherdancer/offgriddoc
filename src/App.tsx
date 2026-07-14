@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Download, ShieldAlert, Droplet, Wand2, Minus, Square, Undo, Redo } from 'lucide-react';
+import { Upload, Download, ShieldAlert, Droplet, Wand2, Minus, Square, Undo, Redo, LayoutGrid } from 'lucide-react';
 import { InstallApp } from './components/InstallApp';
 import { DocumentViewer, type DocumentViewerRef } from './components/DocumentViewer';
 import './index.css';
@@ -185,13 +185,18 @@ function App() {
   return (
     <div className="app-container">
       <header>
-        <div className="logo-section">
-          <div className="logo-icon">
-            <ShieldAlert size={28} />
-          </div>
-          <div>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>OffGridDoc</h1>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: 0 }}>Local Document Redactor</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <a href="https://etherdancer-homepage.pages.dev" title="Back to Etherdancer Apps" style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', transition: 'color 0.2s' }}>
+            <LayoutGrid size={24} />
+          </a>
+          <div className="logo-section">
+            <div className="logo-icon">
+              <ShieldAlert size={28} />
+            </div>
+            <div>
+              <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>OffGridDoc</h1>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: 0 }}>Local Document Redactor</p>
+            </div>
           </div>
         </div>
         <div className="status-badge">
