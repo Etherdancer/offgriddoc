@@ -645,9 +645,21 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       // Helper to robustly extract bounding boxes from Tesseract result (fixes Croatian language bug)
       const processTesseractResult = (result: any, sX: number, sY: number) => {
         let count = 0;
-        const words = result?.data?.words || [];
-        const lines = result?.data?.lines || [];
+        const words: any[] = result?.data?.words || [];
+        const lines: any[] = result?.data?.lines || [];
         const tsv = result?.data?.tsv || '';
+
+        // Tesseract.js v5+ dropped words/lines from the top level, extract from blocks
+        if (words.length === 0 && result?.data?.blocks) {
+          result.data.blocks.forEach((b: any) => {
+            b.paragraphs?.forEach((p: any) => {
+              p.lines?.forEach((l: any) => {
+                lines.push(l);
+                l.words?.forEach((w: any) => words.push(w));
+              });
+            });
+          });
+        }
 
         // 1. Strategy A: Word-level boxes (most precise)
         if (words.length > 0) {
@@ -850,9 +862,17 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           const dataUrl = canvasRef.current.toDataURL('image/png');
           const langStr = ocrLanguage === 'eng' ? 'eng' : `${ocrLanguage}+eng`;
           dbg += `Tesseract Language: ${langStr}\n`;
-          const result: any = await Tesseract.recognize(dataUrl, langStr, { logger: m => console.log(m) });
+          const worker = await Tesseract.createWorker(langStr, 1, { logger: m => console.log(m) });
+          const result: any = await worker.recognize(dataUrl, {}, { words: true, lines: true });
+          await worker.terminate();
+          
+          let wordCount = result?.data?.words?.length || 0;
+          if (wordCount === 0 && result?.data?.blocks) {
+             result.data.blocks.forEach((b: any) => b.paragraphs?.forEach((p: any) => p.lines?.forEach((l: any) => wordCount += l.words?.length || 0)));
+          }
+          
           dbg += `Tesseract Extracted Text: "${(result?.data?.text || '').substring(0, 200)}..."\n`;
-          dbg += `Tesseract Words array length: ${result?.data?.words?.length || 0}\n`;
+          dbg += `Tesseract Words array length: ${wordCount}\n`;
           // Since dataUrl is generated from canvasRef, the scale factors are exactly 1
           redactedCount += processTesseractResult(result, 1, 1);
         }
@@ -867,9 +887,17 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         });
         const langStr = ocrLanguage === 'eng' ? 'eng' : `${ocrLanguage}+eng`;
         dbg += `Tesseract Language: ${langStr}\n`;
-        const result: any = await Tesseract.recognize(dataUrl, langStr, { logger: m => console.log(m) });
+        const worker = await Tesseract.createWorker(langStr, 1, { logger: m => console.log(m) });
+        const result: any = await worker.recognize(dataUrl, {}, { words: true, lines: true });
+        await worker.terminate();
+        
+        let wordCount = result?.data?.words?.length || 0;
+        if (wordCount === 0 && result?.data?.blocks) {
+           result.data.blocks.forEach((b: any) => b.paragraphs?.forEach((p: any) => p.lines?.forEach((l: any) => wordCount += l.words?.length || 0)));
+        }
+        
         dbg += `Tesseract Extracted Text: "${(result?.data?.text || '').substring(0, 200)}..."\n`;
-        dbg += `Tesseract Words array length: ${result?.data?.words?.length || 0}\n`;
+        dbg += `Tesseract Words array length: ${wordCount}\n`;
         const sX = canvasRef.current.width / (result?.data?.imageWidth || canvasRef.current.width);
         const sY = canvasRef.current.height / (result?.data?.imageHeight || canvasRef.current.height);
         redactedCount += processTesseractResult(result, sX, sY);
