@@ -638,17 +638,20 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         /\b\d{5,}\b/g,                              // Postal codes / long numeric IDs
         /\b[A-Za-z]{1,3}\s*\d{6,}\b/gi,            // Alphanumeric IDs (passport, licence)
         
-        // --- Multi-lingual Label-Value Matchers (Capture Group 1 is redacted) ---
         // Place of birth
-        /\b(?:mjesto ro[đd]enja|place of birth|geburtsort|lieu de naissance|lugar de nacimiento|luogo di nascita)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        /\b(?:mjesto ro[đd]enja|place of birth|birthplace|geburtsort|lieu de naissance|lugar de nacimiento|luogo di nascita|naturalidade|local de nascimento|locul na[sș]terii|születési hely|födelseort|fødested|syntymäpaikka|sünnikoht|dzimšanas vieta|gimimo vieta|τόπος γέννησης|doğum yeri|مكان الميلاد|محل تولد|مקום לידה|जन्म स्थान|出生地|출생지|место рождения|місце народження|miejsce urodzenia|místo narození|miesto narodenia|kraj rojstva|место на раѓање)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        
         // Citizenship / Nationality
-        /\b(?:dr[žz]avljanstvo|nacionalnost|citizenship|nationality|staatsangeh[öo]rigkeit|nationalit[ée]|nacionalidad|cittadinanza)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        /\b(?:dr[žz]avljanstvo|nacionalnost|citizenship|nationality|staatsangeh[öo]rigkeit|nationalit[ée]|nacionalidad|cittadinanza|nacionalidade|cidadania|cet[ăa]țenie|naționalitate|állampolgárság|nemzetiség|medborgarskap|statsborgerskap|kansalaisuus|uyruk|vatandaşlık|ιθαγένεια|υπηκοότητα|الجنسية|ملیت|אזרחות|राष्ट्रीयता|国籍|국적|гражданство|национальность|громадянство|національність|obywatelstwo|narodowość|občanství|státní příslušnost|štátna príslušnosť|државјанство)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        
         // Gender / Sex
-        /\b(?:spol|gender|sex|geschlecht|sexe|g[ée]nero|sesso)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        /\b(?:spol|gender|sex|geschlecht|sexe|g[ée]nero|sesso|geslacht|płeć|pohlaví|пол|cinsiyet|性别|性別|성별|kjønn|kön|sukupuoli|gènere|جنس|מין|लिंग|stati)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        
         // Name
-        /\b(?:ime i prezime|full name|name|nom|nombre|nome|first name|last name|ime|prezime)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        /\b(?:ime i prezime|full name|name|nom|nombre|nome|first name|last name|ime|prezime|navn|namn|nimi|isim|ad|όνομα|الاسم|نام|שם|नाम|姓名|名前|이름|имя|ім'я|imię|jméno|meno|imi[ęe] i nazwisko)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi,
+        
         // Address / Residence
-        /\b(?:adresa|address|adresse|direcci[óo]n|indirizzo|prebivali[šs]te|boravi[šs]te)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi
+        /\b(?:adresa|address|adresse|direcci[óo]n|indirizzo|prebivali[šs]te|boravi[šs]te|residence|domicile|residência|morada|woonplaats|adres|zamieszkanie|место жительства|ikametgah|地址|住所|주소|osoite|cím|διεύθυνση|العنوان|آدرس|כתובת|पता|адрес|адреса)\s*:\s*(.*?)(?=\s*[A-Za-zŽĆČĐŠžćčđš]+\s*:|$)/gi
       ];
 
       const matchPatterns = (text: string): boolean =>
