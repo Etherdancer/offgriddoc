@@ -863,7 +863,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           const langStr = ocrLanguage === 'eng' ? 'eng' : `${ocrLanguage}+eng`;
           dbg += `Tesseract Language: ${langStr}\n`;
           const worker = await Tesseract.createWorker(langStr, 1, { logger: m => console.log(m) });
-          const result: any = await worker.recognize(dataUrl, {}, { words: true, lines: true });
+          const result: any = await worker.recognize(dataUrl, {}, { blocks: true });
           await worker.terminate();
           
           let wordCount = result?.data?.words?.length || 0;
@@ -888,7 +888,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         const langStr = ocrLanguage === 'eng' ? 'eng' : `${ocrLanguage}+eng`;
         dbg += `Tesseract Language: ${langStr}\n`;
         const worker = await Tesseract.createWorker(langStr, 1, { logger: m => console.log(m) });
-        const result: any = await worker.recognize(dataUrl, {}, { words: true, lines: true });
+        const result: any = await worker.recognize(dataUrl, {}, { blocks: true });
         await worker.terminate();
         
         let wordCount = result?.data?.words?.length || 0;
