@@ -632,7 +632,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         /(?:\+|00)[\d\s().,-]{7,20}\d/g,           // International phone (e.g. +385 955243014)
         /\b\d[\d\s().,-]{6,18}\d\b/g,              // Local long-digit sequences
         /\b[A-Za-z0-9._%+-]+\s*[@&]\s*[A-Za-z0-9.-]+\s*\.\s*[A-Za-z]{2,}\b/gi, // Email (& = OCR misread of @)
-        /\b\d{1,2}[.\/\-]\d{1,2}[.\/\-]\d{2,4}\b/g, // Dates DD/MM/YYYY etc.
+        /\b\d{1,2}\s*[.\/\-]\s*\d{1,2}\s*[.\/\-]\s*\d{2,4}\b/g,     // Dates DD/MM/YYYY etc (with optional spaces from OCR)
         /\b\d{5,}\b/g,                              // Postal codes / long numeric IDs
         /\b[A-Za-z]{1,3}\s*\d{6,}\b/gi,            // Alphanumeric IDs (passport, licence)
       ];
@@ -844,7 +844,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           const ocrCtx = ocrCanvas.getContext('2d')!;
           ocrCtx.fillStyle = '#ffffff';
           ocrCtx.fillRect(0, 0, ocrCanvas.width, ocrCanvas.height);
-          await page.render({ canvas: ocrCanvas, viewport: ocrVp } as any).promise;
+          await page.render({ canvasContext: ocrCtx, viewport: ocrVp } as any).promise;
           const dataUrl = ocrCanvas.toDataURL('image/png');
           const result: any = await Tesseract.recognize(dataUrl, ocrLanguage, { logger: m => console.log(m) });
           const sX = canvasRef.current.width / ocrCanvas.width;
