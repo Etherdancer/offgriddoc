@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://offgriddoc.pages.dev/sitemap.xml
