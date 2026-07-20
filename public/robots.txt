@@ -1,3 +1,5 @@
 User-agent: *
 Allow: /
+
+# Sitemaps
 Sitemap: https://offgriddoc.pages.dev/sitemap.xml
