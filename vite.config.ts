@@ -6,8 +6,16 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      workbox: {
+        navigateFallbackDenylist: [
+          /^\/about-us/,
+          /^\/privacy-policy/,
+          /^\/terms-of-use/,
+          /^\/contact-me/
+        ]
+      },
       manifest: {
         name: 'OffGridDoc - Zero-Knowledge Document Redactor',
         short_name: 'OffGridDoc',

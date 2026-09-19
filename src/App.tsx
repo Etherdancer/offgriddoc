@@ -136,10 +136,12 @@ function App() {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [brushSize, setBrushSize] = useState(20);
-  const [tool, setTool] = useState<'brush' | 'auto' | 'line' | 'area'>('brush');
+  const [tool, setTool] = useState<'brush' | 'line' | 'area'>('brush');
   const [ocrLanguage, setOcrLanguage] = useState('eng');
   const [exportTrigger, setExportTrigger] = useState({ trigger: 0, format: 'pdf' });
   const [exportFormat, setExportFormat] = useState<'pdf' | 'png' | 'jpeg'>('pdf');
+  const [autoRedactTrigger, setAutoRedactTrigger] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   
   const viewerRef = useRef<DocumentViewerRef>(null);
 
@@ -157,6 +159,7 @@ function App() {
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       setFile(e.dataTransfer.files[0]);
     }
@@ -164,6 +167,16 @@ function App() {
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,9 +190,7 @@ function App() {
   };
 
   const handleAutoRedact = () => {
-    setTool('auto');
-    // We revert to brush after a short delay so the tool can be clicked again later
-    setTimeout(() => setTool('brush'), 500);
+    setAutoRedactTrigger(prev => prev + 1);
   };
 
   return (
@@ -200,19 +211,23 @@ function App() {
             </div>
           </div>
         </div>
-        <div className="status-badge">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <InstallApp />
-          <div className="status-dot"></div>
-          Offline Ready
+          <div className="status-badge">
+            <div className="status-dot"></div>
+            Offline Ready
+          </div>
         </div>
       </header>
 
       <main>
         {!file ? (
           <div 
-            className="dropzone"
+            className={`dropzone ${isDragging ? 'active' : ''}`}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
             onClick={() => document.getElementById('file-upload')?.click()}
           >
             <Upload className="dropzone-icon" />
@@ -273,14 +288,17 @@ function App() {
                   <Wand2 size={20} />
                 </button>
                 <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 4px' }}></div>
-                <input 
-                  type="range" 
-                  min="5" max="50" 
-                  value={brushSize}
-                  onChange={(e) => setBrushSize(Number(e.target.value))}
-                  className="range-slider" 
-                  title="Brush Size" 
-                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input 
+                    type="range" 
+                    min="5" max="50" 
+                    value={brushSize}
+                    onChange={(e) => setBrushSize(Number(e.target.value))}
+                    className="range-slider" 
+                    title="Brush Size" 
+                  />
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', minWidth: '32px' }}>{brushSize}px</span>
+                </div>
                 <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 8px' }}></div>
                 <button 
                   className="tool-btn" 
@@ -301,8 +319,7 @@ function App() {
                 <select 
                   value={exportFormat} 
                   onChange={(e) => setExportFormat(e.target.value as any)}
-                  className="tool-btn"
-                  style={{ padding: '0.75rem', borderRadius: 'var(--radius-md)', outline: 'none' }}
+                  className="lang-select"
                   title="Export Format"
                 >
                   <option value="pdf">PDF</option>
@@ -325,9 +342,9 @@ function App() {
             
             <div className="canvas-wrapper">
               {isProcessing && (
-                <div style={{ position: 'absolute', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', background: 'rgba(0,0,0,0.7)', padding: '2rem', borderRadius: '1rem' }}>
+                <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 50, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', background: 'rgba(0,0,0,0.85)', padding: '2rem 3rem', borderRadius: '1rem', border: '1px solid var(--border-color)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
                   <div className="loader"></div>
-                  <span>Processing...</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 500 }}>Processing Document...</span>
                 </div>
               )}
               <DocumentViewer 
@@ -338,6 +355,7 @@ function App() {
                 onProcessing={setIsProcessing}
                 exportTrigger={exportTrigger}
                 ocrLanguage={ocrLanguage}
+                autoRedactTrigger={autoRedactTrigger}
               />
             </div>
           </div>

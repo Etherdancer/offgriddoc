@@ -70,7 +70,7 @@ export const InstallApp: React.FC = () => {
             </div>
             <div className="modal-body" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
               <div style={{ background: 'var(--surface-color)', padding: '1rem', borderRadius: '50%', marginBottom: '0.5rem' }}>
-                <Share size={32} color="var(--primary-color)" />
+                <Share size={32} color="var(--primary)" />
               </div>
               <p style={{ margin: 0, fontSize: '1.1rem' }}>
                 To install OffGridDoc on your iPhone or iPad:

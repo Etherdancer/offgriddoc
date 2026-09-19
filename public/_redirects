@@ -1,1 +1,2 @@
-/* /index.html 200
+# Redirect www. subdomain to apex domain
+https://www.offgriddoc.pages.dev/* https://offgriddoc.pages.dev/:splat 301

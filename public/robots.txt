@@ -1,5 +1,13 @@
 User-agent: *
 Allow: /
+Disallow: /wp-admin/
+Disallow: /wp-login.php
+Disallow: /wp-config.php
+Disallow: /xmlrpc.php
+Disallow: /.env
+Disallow: /administrator/
+Disallow: /admin/
+Disallow: /phpmyadmin/
 
 # Sitemaps
 Sitemap: https://offgriddoc.pages.dev/sitemap.xml

@@ -18,9 +18,10 @@ interface DocumentViewerProps {
   file: File | null;
   brushSize: number;
   tool: 'brush' | 'auto' | 'line' | 'area';
-  onProcessing: (isProcessing: boolean) => void;
   exportTrigger: { trigger: number, format: string };
   ocrLanguage: string;
+  autoRedactTrigger: number;
+  onProcessing: (isProcessing: boolean) => void;
 }
 
 interface Point {
@@ -43,11 +44,14 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
   tool,
   onProcessing,
   exportTrigger,
-  ocrLanguage
+  ocrLanguage,
+  autoRedactTrigger
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  const [pageCount, setPageCount] = useState(0);
   
   // Drawing state
   const isDrawing = useRef(false);
@@ -59,6 +63,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
   const [pendingShape, setPendingShape] = useState<PendingShape | null>(null);
   const [resizingHandle, setResizingHandle] = useState<string | null>(null);
   const [debugText, setDebugText] = useState<string | null>(null);
+  const saveTimeoutRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
 
   // History state for Undo/Redo
   interface HistoryState {
@@ -67,6 +72,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
   }
   const historyRef = useRef<HistoryState[]>([]);
   const historyStepRef = useRef<number>(-1);
+  const pdfDocCacheRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
 
   // We use a ref for pending shape to read it synchronously in event handlers
   const pendingShapeRef = useRef<PendingShape | null>(null);
@@ -145,6 +151,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         if (file.type === 'application/pdf') {
           const arrayBuffer = await file.arrayBuffer();
           const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+          pdfDocCacheRef.current = pdf;
+          setPageCount(pdf.numPages);
           const page = await pdf.getPage(1); // Load first page for now
           
           const viewport = page.getViewport({ scale: 1.5 });
@@ -164,7 +172,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           await page.render(renderContext as any).promise;
           
         } else if (file.type.startsWith('image/')) {
-          let imageUrl = URL.createObjectURL(file);
+          const originalBlobUrl = URL.createObjectURL(file);
+          let imageUrl = originalBlobUrl;
           
           // Strip EXIF data if jpeg
           if (file.type === 'image/jpeg') {
@@ -200,6 +209,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, 0, 0);
+          
+          URL.revokeObjectURL(originalBlobUrl);
         }
         
         // Save initial state to history
@@ -212,7 +223,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     };
 
     loadDocument();
-  }, [file]);
+  }, [file, onProcessing]);
 
   // Handle Export
   useEffect(() => {
@@ -241,7 +252,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         document.body.removeChild(a);
       }
     }
-  }, [exportTrigger]);
+  }, [exportTrigger, file]);
 
   // Draw overlay shape
   useEffect(() => {
@@ -290,52 +301,6 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     }
   }, [pendingShape, brushSize]);
 
-  // Draw overlay shape
-  useEffect(() => {
-    const oCtx = overlayCtxRef.current;
-    const overlayCanvas = overlayCanvasRef.current;
-    if (!oCtx || !overlayCanvas) return;
-    
-    oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    
-    if (!pendingShape) return;
-    
-    oCtx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Semi-transparent black for preview
-    const HANDLE_SIZE = 16;
-    
-    if (pendingShape.type === 'area') {
-      const x = Math.min(pendingShape.startX, pendingShape.endX);
-      const y = Math.min(pendingShape.startY, pendingShape.endY);
-      const w = Math.abs(pendingShape.endX - pendingShape.startX);
-      const h = Math.abs(pendingShape.endY - pendingShape.startY);
-      oCtx.fillRect(x, y, w, h);
-      
-      if (pendingShape.status === 'pending') {
-        oCtx.fillStyle = '#10B981'; // Green handles
-        const hs = HANDLE_SIZE;
-        const hhs = hs / 2;
-        oCtx.fillRect(pendingShape.startX - hhs, pendingShape.startY - hhs, hs, hs);
-        oCtx.fillRect(pendingShape.endX - hhs, pendingShape.startY - hhs, hs, hs);
-        oCtx.fillRect(pendingShape.startX - hhs, pendingShape.endY - hhs, hs, hs);
-        oCtx.fillRect(pendingShape.endX - hhs, pendingShape.endY - hhs, hs, hs);
-      }
-    } else if (pendingShape.type === 'line') {
-      const y = pendingShape.startY;
-      const x = Math.min(pendingShape.startX, pendingShape.endX);
-      const w = Math.abs(pendingShape.endX - pendingShape.startX);
-      const h = brushSize;
-      
-      oCtx.fillRect(x, y - h / 2, w, h);
-      
-      if (pendingShape.status === 'pending') {
-        oCtx.fillStyle = '#10B981';
-        const hs = HANDLE_SIZE;
-        const hhs = hs / 2;
-        oCtx.fillRect(pendingShape.startX - hhs, y - hhs, hs, hs);
-        oCtx.fillRect(pendingShape.endX - hhs, y - hhs, hs, hs);
-      }
-    }
-  }, [pendingShape, brushSize]);
 
   const getFloatingToolbarStyle = (): React.CSSProperties => {
     if (!pendingShape || !overlayCanvasRef.current || !containerRef.current) return { display: 'none' };
@@ -573,7 +538,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     
     if (didChangeShape && tool !== 'brush') {
       // Small timeout to allow state to flush to pendingShapeRef
-      setTimeout(() => saveHistoryState(false), 10);
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => saveHistoryState(false), 10);
     }
   };
 
@@ -594,31 +560,45 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       ctx.fillRect(x, shape.startY - brushSize / 2, w, brushSize);
     }
     updatePendingShape(null);
-    setTimeout(() => saveHistoryState(true), 10);
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => saveHistoryState(true), 10);
   };
 
   const cancelShape = () => {
     updatePendingShape(null);
-    setTimeout(() => saveHistoryState(false), 10);
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => saveHistoryState(false), 10);
   };
+
+  const confirmShapeRef = useRef(confirmShape);
+  const cancelShapeRef = useRef(cancelShape);
+  const undoRef = useRef(undo);
+  const redoRef = useRef(redo);
+
+  useEffect(() => {
+    confirmShapeRef.current = confirmShape;
+    cancelShapeRef.current = cancelShape;
+    undoRef.current = undo;
+    redoRef.current = redo;
+  }, [confirmShape, cancelShape, undo, redo]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') cancelShape();
-      if (e.key === 'Enter') confirmShape();
+      if (e.key === 'Escape') cancelShapeRef.current();
+      if (e.key === 'Enter') confirmShapeRef.current();
       if (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
+        if (e.shiftKey) redoRef.current();
+        else undoRef.current();
       }
       if (e.key.toLowerCase() === 'y' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        redo();
+        redoRef.current();
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  });
+  }, []);
 
     // OCR Auto Redact
   const runAutoRedact = async () => {
@@ -655,7 +635,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       ];
 
       const matchPatterns = (text: string): boolean =>
-        patterns.some(p => { p.lastIndex = 0; return p.test(text); });
+        patterns.some(p => { const reg = new RegExp(p.source, p.flags); return reg.test(text); });
 
       // Helper to robustly extract bounding boxes from Tesseract result (fixes Croatian language bug)
       const processTesseractResult = (result: any, sX: number, sY: number) => {
@@ -768,7 +748,6 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
             });
           }
         }
-        (window as any).lastOcrText = tsv || '';
         return count;
       };
 
@@ -776,8 +755,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         // ── Strategy 1: PDF.js text extraction ──────────────────────────────
         // Text-based PDFs (Word, Europass, etc.) have embedded text — no OCR needed.
         // Falls back to Tesseract only if the PDF has no embedded text (scanned image).
-        const arrayBuffer = await file.arrayBuffer();
-        const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pdfDoc = pdfDocCacheRef.current;
+        if (!pdfDoc) throw new Error("PDF Document not found in cache");
         const page = await pdfDoc.getPage(1);
 
         // Build a viewport that matches the display canvas pixel-for-pixel
@@ -947,10 +926,10 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
   };
 
   useEffect(() => {
-    if (tool === 'auto') {
+    if (autoRedactTrigger > 0) {
       runAutoRedact();
     }
-  }, [tool]);
+  }, [autoRedactTrigger]);
 
   return (
     <div 
@@ -966,6 +945,11 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         position: 'relative'
       }}
     >
+      {pageCount > 1 && (
+        <div style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(239, 68, 68, 0.9)', color: 'white', padding: '0.5rem 1rem', borderRadius: '8px', zIndex: 10, fontSize: '0.875rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
+          Only Page 1 of {pageCount} is editable
+        </div>
+      )}
       <canvas
         ref={canvasRef}
         style={{
