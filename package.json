@@ -1,8 +1,27 @@
 {
   "name": "offgriddoc",
-  "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "100% offline, privacy-first browser-based document redaction and on-device OCR PWA",
   "type": "module",
+  "license": "MIT",
+  "author": "Etherdancer",
+  "homepage": "https://offgriddoc.pages.dev/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Etherdancer/offgriddoc.git"
+  },
+  "keywords": [
+    "redaction",
+    "ocr",
+    "tesseract",
+    "privacy",
+    "pwa",
+    "pdf",
+    "security",
+    "offline-first",
+    "react",
+    "typescript"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

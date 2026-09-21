@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local test scripts & binary models
+*.traineddata
+test_*.js
+
