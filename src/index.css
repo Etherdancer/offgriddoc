@@ -402,3 +402,23 @@ canvas {
 .modal-body {
   padding: 1.5rem;
 }
+
+/* Page navigation for multi-page PDFs */
+.page-nav {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+.page-nav .tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }

@@ -1,7 +1,7 @@
 {
   "name": "offgriddoc",
-  "version": "1.0.0",
-  "description": "100% offline, privacy-first browser-based document redaction and on-device OCR PWA",
+  "version": "1.1.0",
+  "description": "Offline, privacy-first document redaction with on-device OCR",
   "type": "module",
   "license": "MIT",
   "author": "Etherdancer",
@@ -38,6 +38,7 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "@types/node": "^24.13.2",
     "@types/pdfjs-dist": "^2.10.377",
     "@types/react": "^19.2.17",

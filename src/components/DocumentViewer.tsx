@@ -1,13 +1,18 @@
 import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
+// Legacy build: includes polyfills (e.g. Map.getOrInsertComputed) that the modern build
+// assumes, so PDFs open on Safari, older Chrome and Android WebView too.
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import piexif from 'piexifjs';
-import Tesseract from 'tesseract.js';
 import { jsPDF } from 'jspdf';
-import { Check, X } from 'lucide-react';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+import { createOcrWorker } from '../ocr';
 
 // Initialize PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+
+/** Render scale for PDF pages (1.5 ≈ 108 dpi): sharp enough to redact and OCR. */
+const PDF_SCALE = 1.5;
 
 export interface DocumentViewerRef {
   undo: () => void;
@@ -52,6 +57,11 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
   const containerRef = useRef<HTMLDivElement>(null);
   
   const [pageCount, setPageCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const currentPageRef = useRef(1);
+  // Edited PDF pages (page number -> pixels). Unedited pages are re-rendered from the PDF
+  // on demand so large documents don't hold every page in memory.
+  const pageEditsRef = useRef<Map<number, ImageData>>(new Map());
   
   // Drawing state
   const isDrawing = useRef(false);
@@ -129,6 +139,62 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     }
   };
 
+  const resetHistory = () => {
+    historyRef.current = [];
+    historyStepRef.current = -1;
+    saveHistoryState(true);
+  };
+
+  /** Renders PDF page [n] onto [target] at PDF_SCALE with a white background. */
+  const renderPdfPage = async (
+    pdf: pdfjsLib.PDFDocumentProxy, n: number,
+    target: HTMLCanvasElement, tctx: CanvasRenderingContext2D
+  ) => {
+    const page = await pdf.getPage(n);
+    const viewport = page.getViewport({ scale: PDF_SCALE });
+    target.width = viewport.width;
+    target.height = viewport.height;
+    // White background: PDFs are often transparent, which breaks OCR and JPEG export.
+    tctx.fillStyle = '#ffffff';
+    tctx.fillRect(0, 0, target.width, target.height);
+    await page.render({ canvasContext: tctx, viewport, canvas: target } as any).promise;
+  };
+
+  /** Keeps the current page's pixels if it was edited (history beyond the initial state). */
+  const storeCurrentPage = () => {
+    if (!ctxRef.current || !canvasRef.current || !pdfDocCacheRef.current) return;
+    if (historyStepRef.current > 0 || pageEditsRef.current.has(currentPageRef.current)) {
+      pageEditsRef.current.set(
+        currentPageRef.current,
+        ctxRef.current.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height)
+      );
+    }
+  };
+
+  const goToPage = async (n: number) => {
+    const pdf = pdfDocCacheRef.current;
+    const canvas = canvasRef.current, overlay = overlayCanvasRef.current, ctx = ctxRef.current;
+    if (!pdf || !canvas || !overlay || !ctx || n < 1 || n > pdf.numPages || n === currentPageRef.current) return;
+    if (pendingShapeRef.current) confirmShape(); // never drop a redaction the user drew
+    storeCurrentPage();
+    onProcessing(true);
+    try {
+      const edited = pageEditsRef.current.get(n);
+      if (edited) {
+        canvas.width = edited.width; canvas.height = edited.height;
+        ctx.putImageData(edited, 0, 0);
+      } else {
+        await renderPdfPage(pdf, n, canvas, ctx);
+      }
+      overlay.width = canvas.width; overlay.height = canvas.height;
+      currentPageRef.current = n;
+      setCurrentPage(n);
+      resetHistory(); // undo history is per page
+    } finally {
+      onProcessing(false);
+    }
+  };
+
   useImperativeHandle(ref, () => ({
     undo,
     redo
@@ -141,11 +207,19 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       onProcessing(true);
       const canvas = canvasRef.current!;
       const overlayCanvas = overlayCanvasRef.current!;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       const oCtx = overlayCanvas.getContext('2d');
-      if (!ctx || !oCtx) return;
+      if (!ctx || !oCtx) { onProcessing(false); return; }
       ctxRef.current = ctx;
       overlayCtxRef.current = oCtx;
+
+      // New document: forget everything about the previous one.
+      pageEditsRef.current = new Map();
+      pdfDocCacheRef.current = null;
+      updatePendingShape(null);
+      setPageCount(0);
+      setCurrentPage(1);
+      currentPageRef.current = 1;
 
       try {
         if (file.type === 'application/pdf') {
@@ -153,24 +227,9 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
           pdfDocCacheRef.current = pdf;
           setPageCount(pdf.numPages);
-          const page = await pdf.getPage(1); // Load first page for now
-          
-          const viewport = page.getViewport({ scale: 1.5 });
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
-          overlayCanvas.height = viewport.height;
-          overlayCanvas.width = viewport.width;
-          
-          // Fill with white background (crucial for OCR and PDF rendering)
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          
-          const renderContext = {
-            canvasContext: ctx,
-            viewport: viewport
-          };
-          await page.render(renderContext as any).promise;
-          
+          await renderPdfPage(pdf, 1, canvas, ctx);
+          overlayCanvas.width = canvas.width;
+          overlayCanvas.height = canvas.height;
         } else if (file.type.startsWith('image/')) {
           const originalBlobUrl = URL.createObjectURL(file);
           let imageUrl = originalBlobUrl;
@@ -211,12 +270,15 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           ctx.drawImage(img, 0, 0);
           
           URL.revokeObjectURL(originalBlobUrl);
+        } else {
+          throw new Error(`Unsupported file type: ${file.type || 'unknown'}`);
         }
-        
-        // Save initial state to history
-        setTimeout(() => saveHistoryState(true), 100);
+
+        // Initial state for undo
+        resetHistory();
       } catch (err) {
         console.error("Error loading document:", err);
+        alert(`Could not open this file. ${err instanceof Error ? err.message : ''}\n\nSupported: PDF, JPEG, PNG, WebP, GIF, BMP.`);
       } finally {
         onProcessing(false);
       }
@@ -227,32 +289,77 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
 
   // Handle Export
   useEffect(() => {
-    if (exportTrigger.trigger > 0 && canvasRef.current) {
-      const format = exportTrigger.format;
-      const canvas = canvasRef.current;
-      const filename = `redacted_${file?.name?.split('.')[0] || 'document'}`;
+    if (exportTrigger.trigger === 0 || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const format = exportTrigger.format;
+    const filename = `redacted_${file?.name?.replace(/\.[^.]+$/, '') || 'document'}`;
 
-      if (format === 'pdf') {
-        const imgData = canvas.toDataURL('image/jpeg', 1.0);
-        const pdf = new jsPDF({
-          orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
-          unit: 'px',
-          format: [canvas.width, canvas.height]
-        });
-        pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
-        pdf.save(`${filename}.pdf`);
-      } else {
-        const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
-        const dataUrl = canvas.toDataURL(mimeType, 1.0);
-        const a = document.createElement('a');
-        a.href = dataUrl;
-        a.download = `${filename}.${format}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+    // A drawn-but-unconfirmed box is only a preview on the overlay. Burn it in first,
+    // otherwise the exported file would contain the text the user meant to hide.
+    if (pendingShapeRef.current) confirmShape();
+
+    const run = async () => {
+      onProcessing(true);
+      try {
+        const pdfDoc = pdfDocCacheRef.current;
+        if (format === 'pdf' && pdfDoc) {
+          storeCurrentPage();
+          let doc: jsPDF | null = null;
+          const scratch = document.createElement('canvas');
+          const sctx = scratch.getContext('2d')!;
+          for (let n = 1; n <= pdfDoc.numPages; n++) {
+            const edited = pageEditsRef.current.get(n);
+            if (n === currentPageRef.current) {
+              scratch.width = canvas.width; scratch.height = canvas.height;
+              sctx.drawImage(canvas, 0, 0);
+            } else if (edited) {
+              scratch.width = edited.width; scratch.height = edited.height;
+              sctx.putImageData(edited, 0, 0);
+            } else {
+              await renderPdfPage(pdfDoc, n, scratch, sctx);
+            }
+            const w = scratch.width, h = scratch.height;
+            const orientation = w > h ? 'landscape' : 'portrait';
+            if (!doc) doc = new jsPDF({ orientation, unit: 'px', format: [w, h], hotfixes: ['px_scaling'] });
+            else doc.addPage([w, h], orientation);
+            doc.addImage(scratch.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, w, h);
+          }
+          doc?.save(`${filename}.pdf`);
+        } else if (format === 'pdf') {
+          const pdf = new jsPDF({
+            orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
+            unit: 'px',
+            format: [canvas.width, canvas.height],
+            hotfixes: ['px_scaling']
+          });
+          pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, canvas.width, canvas.height);
+          pdf.save(`${filename}.pdf`);
+        } else {
+          // Raster formats hold one page: export the page being viewed.
+          const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+          const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, mimeType, 0.95));
+          if (!blob) throw new Error('Could not encode image');
+          const url = URL.createObjectURL(blob);
+          const pageSuffix = pdfDoc && pdfDoc.numPages > 1 ? `_page${currentPageRef.current}` : '';
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${filename}${pageSuffix}.${format === 'jpeg' ? 'jpg' : format}`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+      } catch (e) {
+        console.error('Export failed', e);
+        alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        onProcessing(false);
       }
-    }
-  }, [exportTrigger, file]);
+    };
+    run();
+    // Only re-run when the user clicks Export.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exportTrigger]);
 
   // Draw overlay shape
   useEffect(() => {
@@ -575,12 +682,13 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
   const undoRef = useRef(undo);
   const redoRef = useRef(redo);
 
+  // Keep the keyboard handler pointing at the latest closures (runs after every render).
   useEffect(() => {
     confirmShapeRef.current = confirmShape;
     cancelShapeRef.current = cancelShape;
     undoRef.current = undo;
     redoRef.current = redo;
-  }, [confirmShape, cancelShape, undo, redo]);
+  });
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -614,7 +722,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         /(?:\+|00)[\d\s().,-]{7,20}\d/g,           // International phone (e.g. +385 955243014)
         /\b\d[\d\s().,-]{6,18}\d\b/g,              // Local long-digit sequences
         /\b[A-Za-z0-9._%+-]+\s*[@&]\s*[A-Za-z0-9.-]+\s*\.\s*[A-Za-z]{2,}\b/gi, // Email (& = OCR misread of @)
-        /\b\d{1,2}\s*[.\/\-]\s*\d{1,2}\s*[.\/\-]\s*\d{2,4}\b/g,     // Dates DD/MM/YYYY etc (with optional spaces from OCR)
+        /\b\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{2,4}\b/g,     // Dates DD/MM/YYYY etc (with optional spaces from OCR)
         /\b\d{5,}\b/g,                              // Postal codes / long numeric IDs
         /\b[A-Za-z]{1,3}\s*\d{6,}\b/gi,            // Alphanumeric IDs (passport, licence)
         
@@ -757,7 +865,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
         // Falls back to Tesseract only if the PDF has no embedded text (scanned image).
         const pdfDoc = pdfDocCacheRef.current;
         if (!pdfDoc) throw new Error("PDF Document not found in cache");
-        const page = await pdfDoc.getPage(1);
+        const page = await pdfDoc.getPage(currentPageRef.current);
 
         // Build a viewport that matches the display canvas pixel-for-pixel
         const baseVp = page.getViewport({ scale: 1 });
@@ -871,7 +979,7 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
           const dataUrl = canvasRef.current.toDataURL('image/png');
           const langStr = ocrLanguage === 'eng' ? 'eng' : `${ocrLanguage}+eng`;
           dbg += `Tesseract Language: ${langStr}\n`;
-          const worker = await Tesseract.createWorker(langStr, 1, { logger: m => console.log(m) });
+          const worker = await createOcrWorker(langStr);
           const result: any = await worker.recognize(dataUrl, {}, { blocks: true });
           await worker.terminate();
           
@@ -888,15 +996,12 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
 
       } else {
         // ── Strategy 2: Image files → Tesseract OCR ─────────────────────────
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = e => resolve(e.target!.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+        // OCR the canvas, not the original file: the file may carry an EXIF rotation that
+        // the canvas doesn't (EXIF is stripped on load), which would misplace every box.
+        const dataUrl = canvasRef.current.toDataURL('image/png');
         const langStr = ocrLanguage === 'eng' ? 'eng' : `${ocrLanguage}+eng`;
         dbg += `Tesseract Language: ${langStr}\n`;
-        const worker = await Tesseract.createWorker(langStr, 1, { logger: m => console.log(m) });
+        const worker = await createOcrWorker(langStr);
         const result: any = await worker.recognize(dataUrl, {}, { blocks: true });
         await worker.terminate();
         
@@ -929,6 +1034,8 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
     if (autoRedactTrigger > 0) {
       runAutoRedact();
     }
+    // Only re-run when the user clicks Auto-Redact.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRedactTrigger]);
 
   return (
@@ -946,8 +1053,14 @@ export const DocumentViewer = forwardRef<DocumentViewerRef, DocumentViewerProps>
       }}
     >
       {pageCount > 1 && (
-        <div style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(239, 68, 68, 0.9)', color: 'white', padding: '0.5rem 1rem', borderRadius: '8px', zIndex: 10, fontSize: '0.875rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
-          Only Page 1 of {pageCount} is editable
+        <div className="page-nav" role="navigation" aria-label="Pages">
+          <button className="tool-btn" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1} aria-label="Previous page">
+            <ChevronLeft size={18} />
+          </button>
+          <span>Page {currentPage} / {pageCount}</span>
+          <button className="tool-btn" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= pageCount} aria-label="Next page">
+            <ChevronRight size={18} />
+          </button>
         </div>
       )}
       <canvas
